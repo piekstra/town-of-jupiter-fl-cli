@@ -43,6 +43,11 @@ pub struct Portal {
     client: Client,
     base_url: String,
     username: Option<String>,
+    /// Whether a saved session was loaded (cookies seeded) for this base URL.
+    /// A cheap, reliable gate: with no session we are definitely logged out,
+    /// so we can reject authenticated calls without a network round-trip (and
+    /// without risking a scrape of a public page that merely looks empty).
+    has_session: bool,
 }
 
 impl Portal {
@@ -57,16 +62,19 @@ impl Portal {
         let client = Client::new(&base_url, timeout)?;
 
         let mut username = cfg.username.clone();
+        let mut has_session = false;
         if let Some(sess) = Session::load()? {
-            if sess.base_url == base_url {
+            if sess.base_url == base_url && !sess.cookies.is_empty() {
                 client.seed_cookies(&sess.cookies);
                 username = username.or(sess.username);
+                has_session = true;
             }
         }
         Ok(Portal {
             client,
             base_url,
             username,
+            has_session,
         })
     }
 
@@ -86,6 +94,7 @@ impl Portal {
     pub fn login(&mut self, username: &str, password: &str) -> Result<std::path::PathBuf> {
         auth::login(&self.client, username, password)?;
         self.username = Some(username.to_string());
+        self.has_session = true;
         let sess = Session {
             cookies: self.client.snapshot_cookies(),
             base_url: self.base_url.clone(),
@@ -96,7 +105,13 @@ impl Portal {
     }
 
     /// Whether the current (persisted) session is still authenticated.
+    ///
+    /// Short-circuits to `false` with no network call when no session is loaded;
+    /// otherwise confirms with the portal that the cookies are still good.
     pub fn is_authenticated(&self) -> Result<bool> {
+        if !self.has_session {
+            return Ok(false);
+        }
         auth::verify(&self.client)
     }
 

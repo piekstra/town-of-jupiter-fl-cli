@@ -23,6 +23,35 @@ pub const TRANSACTION_HISTORY: &str = "/TransactionHistory.aspx";
 pub const USER_PROFILE: &str = "/UserProfile.aspx";
 
 /// True if a fetched page is actually the login page (i.e. we got bounced).
+///
+/// Matches on login-specific markers: the DNN login password field, the login
+/// skin, or a `returnurl=` back to the page we asked for (which is how the
+/// portal signals "authenticate first").
 pub fn looks_like_login(html: &str) -> bool {
-    html.contains("Login_DNN$txtUsername") || html.contains("txtUsername")
+    html.contains("Login_DNN$txtPassword")
+        || html.contains("$txtPassword")
+        || html.contains("Login_DNN$txtUsername")
+        || html.contains("Skins/LinkLogin")
+        || html.contains("returnurl=")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_login_and_bounce_pages() {
+        // The real login form.
+        assert!(looks_like_login(
+            r#"<input name="dnn$ctr1216$Login$Login_DNN$txtPassword" type="password">"#
+        ));
+        // A protected page that bounced us back with a returnurl.
+        assert!(looks_like_login(
+            r#"<a href="/Login/tabid/400/Default.aspx?returnurl=%2fBillingHistory.aspx">Login</a>"#
+        ));
+        // A genuine data page should not be mistaken for login.
+        assert!(!looks_like_login(
+            r#"<table><tr><th>Bill Date</th><th>Amount</th></tr></table>"#
+        ));
+    }
 }
