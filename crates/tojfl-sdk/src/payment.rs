@@ -1,0 +1,171 @@
+//! One-time payment flow (`OnlinePayment.aspx`).
+//!
+//! This is the public, pre-login "pay without an account" path. You enter a
+//! customer number and account number; the portal validates them and reports
+//! the amount due, then opens a hosted card-entry page in a pop-up. This module
+//! automates the lookup and locates the hosted page; it deliberately does NOT
+//! submit card details — that happens on the processor's own secure page.
+
+use crate::client::Client;
+use crate::dnn::{find_input_name_ending_with, find_name_by_id_ending_with, FormState};
+use crate::error::{Error, Result};
+use crate::model::{Money, PaymentQuote};
+use crate::pages;
+use scraper::{Html, Selector};
+
+/// Validate a customer/account pair and read back the amount due.
+pub fn quote(client: &Client, customer_number: &str, account_number: &str) -> Result<PaymentQuote> {
+    validate_numbers(customer_number, account_number)?;
+
+    let page = client.get_text(pages::ONLINE_PAYMENT)?;
+    let mut form = FormState::from_html(&page);
+
+    let cust_field = find_input_name_ending_with(&page, "txtCust")
+        .ok_or_else(|| Error::MissingFormField("txtCust (customer number input)".into()))?;
+    let acct_field = find_input_name_ending_with(&page, "txtAcct")
+        .ok_or_else(|| Error::MissingFormField("txtAcct (account number input)".into()))?;
+
+    form.set(&cust_field, customer_number);
+    form.set(&acct_field, account_number);
+
+    if let Some(go) = find_name_by_id_ending_with(&page, "GoButton")
+        .or_else(|| find_input_name_ending_with(&page, "GoButton"))
+    {
+        // GoButton is a real submit; post it as a named field so ASP.NET fires
+        // its click handler.
+        form.set(&go, "Go");
+    }
+
+    let action = form
+        .action
+        .clone()
+        .unwrap_or_else(|| pages::ONLINE_PAYMENT.to_string());
+    let body = client.post_form_text(&action, &form.to_pairs())?;
+
+    let amount_due = read_amount_due(&body);
+    let hosted = find_hosted_payment_url(&body);
+    let message = read_message(&body);
+    // Heuristic validity: we found a balance or a hosted page, and no error msg.
+    let valid = (amount_due.is_some() || hosted.is_some())
+        && !message.as_deref().map(looks_like_error).unwrap_or(false);
+
+    Ok(PaymentQuote {
+        customer_number: customer_number.to_string(),
+        account_number: account_number.to_string(),
+        amount_due,
+        account_name: None,
+        hosted_payment_url: hosted,
+        valid,
+        message,
+    })
+}
+
+fn validate_numbers(customer: &str, account: &str) -> Result<()> {
+    if customer.is_empty() || !customer.chars().all(|c| c.is_ascii_digit()) {
+        return Err(Error::invalid(
+            "customer number must be all digits (7 digits, with leading zeros)",
+        ));
+    }
+    if account.is_empty() || !account.chars().all(|c| c.is_ascii_digit()) {
+        return Err(Error::invalid(
+            "account number must be all digits (6 digits, with leading zeros)",
+        ));
+    }
+    Ok(())
+}
+
+fn read_amount_due(html: &str) -> Option<Money> {
+    let doc = Html::parse_document(html);
+    // Look for a labeled amount-due value first.
+    for sel in ["[id$=lblAmount]", "[id$=lblBalance]", "[id$=AmountDue]"] {
+        if let Ok(s) = Selector::parse(sel) {
+            if let Some(el) = doc.select(&s).next() {
+                let t = el.text().collect::<String>();
+                if let Some(m) = Money::parse(&t) {
+                    return Some(m);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn read_message(html: &str) -> Option<String> {
+    let doc = Html::parse_document(html);
+    for sel in [
+        "[id$=lblMessage]",
+        "[id$=lblError]",
+        ".NormalRed",
+        ".dnnFormMessage",
+    ] {
+        if let Ok(s) = Selector::parse(sel) {
+            if let Some(el) = doc.select(&s).next() {
+                let t = el.text().collect::<String>().trim().to_string();
+                // The page always carries a static "turn off your pop-up
+                // blocker" instruction; it is not a per-request message.
+                if !t.is_empty() && !t.to_lowercase().contains("pop-up blocker") {
+                    return Some(t);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn find_hosted_payment_url(html: &str) -> Option<String> {
+    // The portal opens the hosted page via window.open('...') or a redirect.
+    if let Some(idx) = html.find("window.open(") {
+        let rest = &html[idx + "window.open(".len()..];
+        let trimmed = rest.trim_start_matches([' ', '\'', '"']);
+        let end = trimmed.find(['\'', '"']).unwrap_or(0);
+        if end > 0 {
+            let url = &trimmed[..end];
+            if url.starts_with("http") || url.starts_with('/') {
+                return Some(url.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn looks_like_error(msg: &str) -> bool {
+    let m = msg.to_lowercase();
+    [
+        "invalid",
+        "not found",
+        "no account",
+        "does not match",
+        "error",
+        "unable",
+    ]
+    .iter()
+    .any(|k| m.contains(k))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_non_digit_numbers() {
+        assert!(validate_numbers("12a4567", "000000").is_err());
+        assert!(validate_numbers("1234567", "00abcd").is_err());
+        assert!(validate_numbers("1234567", "000000").is_ok());
+    }
+
+    #[test]
+    fn extracts_window_open_url() {
+        let html =
+            r#"<script>window.open('https://pay.example.com/session/abc','_blank');</script>"#;
+        assert_eq!(
+            find_hosted_payment_url(html).as_deref(),
+            Some("https://pay.example.com/session/abc")
+        );
+    }
+
+    #[test]
+    fn error_message_detection() {
+        assert!(looks_like_error("Account not found"));
+        assert!(!looks_like_error("Amount due: $50.00"));
+    }
+}

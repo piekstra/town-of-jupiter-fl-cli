@@ -1,0 +1,22 @@
+[package]
+name = "tojfl-sdk"
+description = "Client SDK for the Town of Jupiter, FL utility billing portal (Harris eCARE on DotNetNuke)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+scraper.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+url.workspace = true
+directories.workspace = true
+keyring.workspace = true
+toml.workspace = true
+regex.workspace = true

@@ -1,0 +1,602 @@
+//! Command handlers. Each returns `anyhow::Result<()>` and prints its own
+//! output (table or JSON) via [`Format`].
+
+use crate::cli::*;
+use crate::output::{opt, Format};
+use anyhow::{anyhow, Context, Result};
+use std::io::Read;
+use tojfl_sdk::{config, Config, Portal};
+
+/// Shared context threaded through handlers.
+pub struct Ctx {
+    pub fmt: Format,
+    pub cfg: Config,
+    pub username: Option<String>,
+    pub verbose: bool,
+}
+
+impl Ctx {
+    fn portal(&self) -> Result<Portal> {
+        let portal = Portal::new(&self.cfg).context("initializing portal client")?;
+        if self.verbose {
+            eprintln!(
+                "[tojfl] base_url={} authenticated_username={}",
+                portal.base_url(),
+                portal.username().unwrap_or("(none)")
+            );
+        }
+        Ok(portal)
+    }
+}
+
+// --- auth -----------------------------------------------------------------
+
+pub fn auth(ctx: &Ctx, cmd: &AuthCmd) -> Result<()> {
+    match cmd {
+        AuthCmd::Login(args) => auth_login(ctx, args),
+        AuthCmd::Logout { forget } => auth_logout(ctx, *forget),
+        AuthCmd::Status => auth_status(ctx),
+    }
+}
+
+fn auth_login(ctx: &Ctx, args: &LoginArgs) -> Result<()> {
+    let username = ctx
+        .username
+        .clone()
+        .or_else(|| ctx.cfg.username.clone())
+        .or_else(|| prompt_line("Portal username: ").ok())
+        .ok_or_else(|| anyhow!("a username is required"))?;
+
+    let password = resolve_password(args)?;
+
+    let mut portal = ctx.portal()?;
+    let path = portal.login(&username, &password).context("login failed")?;
+
+    if args.save {
+        config::keychain_set(&password).context("saving password to keychain")?;
+        let mut cfg = ctx.cfg.clone();
+        cfg.username = Some(username.clone());
+        cfg.save().context("saving username to config")?;
+    }
+
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&serde_json::json!({
+            "status": "ok",
+            "username": username,
+            "session_saved_to": path.display().to_string(),
+            "credentials_saved": args.save,
+        }))?;
+    } else {
+        println!("✓ Logged in as {username}. Session saved.");
+        if args.save {
+            println!("✓ Password stored in the OS keychain; username saved to config.");
+        }
+    }
+    Ok(())
+}
+
+fn auth_logout(ctx: &Ctx, forget: bool) -> Result<()> {
+    let portal = ctx.portal()?;
+    portal.logout().context("clearing session")?;
+    if forget {
+        config::keychain_clear().context("clearing keychain password")?;
+    }
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&serde_json::json!({
+            "status": "ok",
+            "forgot_password": forget,
+        }))?;
+    } else {
+        println!(
+            "✓ Session cleared.{}",
+            if forget {
+                " Password removed from keychain."
+            } else {
+                ""
+            }
+        );
+    }
+    Ok(())
+}
+
+fn auth_status(ctx: &Ctx) -> Result<()> {
+    let portal = ctx.portal()?;
+    let authed = portal.is_authenticated().unwrap_or(false);
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&serde_json::json!({
+            "authenticated": authed,
+            "username": portal.username(),
+            "base_url": portal.base_url(),
+        }))?;
+    } else {
+        let who = portal.username().unwrap_or("(unknown)");
+        if authed {
+            println!("✓ Authenticated as {who} at {}", portal.base_url());
+        } else {
+            println!("✗ Not authenticated. Run `tojfl auth login`.");
+        }
+    }
+    Ok(())
+}
+
+// --- account --------------------------------------------------------------
+
+pub fn account(ctx: &Ctx, cmd: &AccountCmd) -> Result<()> {
+    match cmd {
+        AccountCmd::Show => account_show(ctx),
+        AccountCmd::List => account_list(ctx),
+    }
+}
+
+fn account_show(ctx: &Ctx) -> Result<()> {
+    let portal = ctx.portal()?;
+    let acct = portal.account_summary()?;
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&acct)?;
+    } else {
+        ctx.fmt.print_kv(
+            "Account Summary",
+            &[
+                ("Name", opt(&acct.name)),
+                ("Service address", opt(&acct.service_address)),
+                ("Balance", opt(&acct.balance)),
+                ("Due date", opt(&acct.due_date)),
+                (
+                    "Account #",
+                    if acct.account_number.is_empty() {
+                        "—".into()
+                    } else {
+                        acct.account_number.clone()
+                    },
+                ),
+            ],
+        );
+    }
+    Ok(())
+}
+
+fn account_list(ctx: &Ctx) -> Result<()> {
+    // The portal supports linking multiple accounts to one login; the summary
+    // page is the reliable source we scrape today. Present it as a one-row list.
+    let portal = ctx.portal()?;
+    let acct = portal.account_summary()?;
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&vec![&acct])?;
+    } else {
+        ctx.fmt.print_table(
+            &["Account #", "Name", "Balance", "Due"],
+            &[vec![
+                if acct.account_number.is_empty() {
+                    "—".into()
+                } else {
+                    acct.account_number.clone()
+                },
+                opt(&acct.name),
+                opt(&acct.balance),
+                opt(&acct.due_date),
+            ]],
+        );
+    }
+    Ok(())
+}
+
+pub fn balance(ctx: &Ctx) -> Result<()> {
+    let portal = ctx.portal()?;
+    let bal = portal.balance()?;
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&serde_json::json!({ "balance": bal }))?;
+    } else {
+        match bal {
+            Some(b) => println!("Balance due: {b}"),
+            None => println!("Balance not available."),
+        }
+    }
+    Ok(())
+}
+
+// --- bills ----------------------------------------------------------------
+
+pub fn bills(ctx: &Ctx, cmd: &BillsCmd) -> Result<()> {
+    let portal = ctx.portal()?;
+    let mut items = portal.bills()?;
+    match cmd {
+        BillsCmd::Latest => {
+            items.truncate(1);
+        }
+        BillsCmd::List { limit } => {
+            if let Some(n) = limit {
+                items.truncate(*n);
+            }
+        }
+    }
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&items)?;
+    } else {
+        let rows: Vec<Vec<String>> = items
+            .iter()
+            .map(|b| {
+                vec![
+                    b.date.clone(),
+                    opt(&b.amount),
+                    opt(&b.balance),
+                    opt(&b.due_date),
+                ]
+            })
+            .collect();
+        ctx.fmt
+            .print_table(&["Date", "Amount", "Balance", "Due date"], &rows);
+    }
+    Ok(())
+}
+
+// --- usage ----------------------------------------------------------------
+
+pub fn usage(ctx: &Ctx, cmd: &UsageCmd) -> Result<()> {
+    let portal = ctx.portal()?;
+    let items = portal.usage()?;
+    match cmd {
+        UsageCmd::Compare => usage_compare(ctx, &items),
+        UsageCmd::List { limit } => {
+            let mut items = items;
+            if let Some(n) = limit {
+                items.truncate(*n);
+            }
+            if ctx.fmt.json {
+                ctx.fmt.print_json(&items)?;
+            } else {
+                let rows: Vec<Vec<String>> = items
+                    .iter()
+                    .map(|u| {
+                        vec![
+                            u.period.clone(),
+                            u.quantity.map(fmt_num).unwrap_or_else(|| "—".into()),
+                            opt(&u.unit),
+                            u.days.map(|d| d.to_string()).unwrap_or_else(|| "—".into()),
+                            u.average_per_day.map(fmt_num).unwrap_or_else(|| "—".into()),
+                        ]
+                    })
+                    .collect();
+                ctx.fmt
+                    .print_table(&["Period", "Usage", "Unit", "Days", "Avg/day"], &rows);
+            }
+            Ok(())
+        }
+    }
+}
+
+fn usage_compare(ctx: &Ctx, items: &[tojfl_sdk::UsageRecord]) -> Result<()> {
+    #[derive(serde::Serialize)]
+    struct Delta {
+        period: String,
+        quantity: Option<f64>,
+        change: Option<f64>,
+        percent: Option<f64>,
+    }
+    let mut deltas = Vec::new();
+    for (i, u) in items.iter().enumerate() {
+        let prev = items.get(i + 1).and_then(|p| p.quantity);
+        let change = match (u.quantity, prev) {
+            (Some(c), Some(p)) => Some(c - p),
+            _ => None,
+        };
+        let percent = match (change, prev) {
+            (Some(d), Some(p)) if p != 0.0 => Some(d / p * 100.0),
+            _ => None,
+        };
+        deltas.push(Delta {
+            period: u.period.clone(),
+            quantity: u.quantity,
+            change,
+            percent,
+        });
+    }
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&deltas)?;
+    } else {
+        let rows: Vec<Vec<String>> = deltas
+            .iter()
+            .map(|d| {
+                vec![
+                    d.period.clone(),
+                    d.quantity.map(fmt_num).unwrap_or_else(|| "—".into()),
+                    d.change
+                        .map(|c| format!("{}{}", if c >= 0.0 { "+" } else { "" }, fmt_num(c)))
+                        .unwrap_or_else(|| "—".into()),
+                    d.percent
+                        .map(|p| format!("{p:+.1}%"))
+                        .unwrap_or_else(|| "—".into()),
+                ]
+            })
+            .collect();
+        ctx.fmt
+            .print_table(&["Period", "Usage", "Δ vs prior", "Δ %"], &rows);
+    }
+    Ok(())
+}
+
+// --- transactions ---------------------------------------------------------
+
+pub fn transactions(ctx: &Ctx, cmd: &TransactionsCmd) -> Result<()> {
+    let portal = ctx.portal()?;
+    let mut items = portal.transactions()?;
+    let TransactionsCmd::List { limit } = cmd;
+    if let Some(n) = limit {
+        items.truncate(*n);
+    }
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&items)?;
+    } else {
+        let rows: Vec<Vec<String>> = items
+            .iter()
+            .map(|t| {
+                vec![
+                    t.date.clone(),
+                    t.description.clone(),
+                    opt(&t.amount),
+                    opt(&t.balance),
+                ]
+            })
+            .collect();
+        ctx.fmt
+            .print_table(&["Date", "Description", "Amount", "Balance"], &rows);
+    }
+    Ok(())
+}
+
+// --- pay ------------------------------------------------------------------
+
+pub fn pay(ctx: &Ctx, cmd: &PayCmd) -> Result<()> {
+    match cmd {
+        PayCmd::Quote(args) => pay_quote(ctx, &args.customer, &args.account, false),
+        PayCmd::Open(args) => pay_open(ctx, args),
+    }
+}
+
+fn pay_quote(ctx: &Ctx, customer: &str, account: &str, _open: bool) -> Result<()> {
+    let portal = ctx.portal()?;
+    let quote = portal.payment_quote(customer, account)?;
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&quote)?;
+    } else {
+        ctx.fmt.print_kv(
+            "Payment Quote",
+            &[
+                ("Customer #", quote.customer_number.clone()),
+                ("Account #", quote.account_number.clone()),
+                ("Amount due", opt(&quote.amount_due)),
+                ("Valid", quote.valid.to_string()),
+                ("Message", opt(&quote.message)),
+                ("Hosted page", opt(&quote.hosted_payment_url)),
+            ],
+        );
+        if quote.hosted_payment_url.is_some() {
+            println!("\nCard entry happens on the hosted page above — this tool never handles card data.");
+        }
+    }
+    Ok(())
+}
+
+fn pay_open(ctx: &Ctx, args: &PayOpenArgs) -> Result<()> {
+    let portal = ctx.portal()?;
+    let quote = portal.payment_quote(&args.customer, &args.account)?;
+    match &quote.hosted_payment_url {
+        Some(url) => {
+            if args.open {
+                open_in_browser(url)?;
+            }
+            if ctx.fmt.json {
+                ctx.fmt.print_json(&quote)?;
+            } else {
+                println!("Hosted payment page: {url}");
+                println!("Amount due: {}", opt(&quote.amount_due));
+                println!(
+                    "\nComplete the payment on that page — this tool never handles card data."
+                );
+            }
+            Ok(())
+        }
+        None => {
+            if ctx.fmt.json {
+                ctx.fmt.print_json(&quote)?;
+                Ok(())
+            } else {
+                Err(anyhow!(
+                    "could not determine a hosted payment URL{}",
+                    quote
+                        .message
+                        .as_deref()
+                        .map(|m| format!(" ({m})"))
+                        .unwrap_or_default()
+                ))
+            }
+        }
+    }
+}
+
+// --- profile --------------------------------------------------------------
+
+pub fn profile(ctx: &Ctx, cmd: &ProfileCmd) -> Result<()> {
+    let ProfileCmd::Show = cmd;
+    let portal = ctx.portal()?;
+    let p = portal.profile()?;
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&p)?;
+    } else {
+        let mut pairs = vec![
+            ("Username", opt(&p.username)),
+            ("First name", opt(&p.first_name)),
+            ("Last name", opt(&p.last_name)),
+            ("Email", opt(&p.email)),
+        ];
+        // Keep String values alive for the borrow in print_kv.
+        let extra: Vec<(String, String)> = p
+            .extra
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        for (k, v) in &extra {
+            pairs.push((k.as_str(), v.clone()));
+        }
+        ctx.fmt.print_kv("Profile", &pairs);
+    }
+    Ok(())
+}
+
+// --- ebill ----------------------------------------------------------------
+
+pub fn ebill(ctx: &Ctx, cmd: &EbillCmd) -> Result<()> {
+    let EbillCmd::Status = cmd;
+    let portal = ctx.portal()?;
+    let acct = portal.account_summary()?;
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&serde_json::json!({
+            "paperless": acct.paperless,
+            "autopay": acct.autopay,
+        }))?;
+    } else {
+        println!("Paperless / eBill: {}", tri_state(acct.paperless));
+        println!("Autopay / bank draft: {}", tri_state(acct.autopay));
+    }
+    Ok(())
+}
+
+// --- contact --------------------------------------------------------------
+
+pub fn contact(ctx: &Ctx) -> Result<()> {
+    let portal = ctx.portal()?;
+    let c = portal.contact();
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&c)?;
+    } else {
+        ctx.fmt.print_kv(
+            "Town of Jupiter Utilities",
+            &[
+                ("Department", c.department),
+                ("Phone", c.phone),
+                ("Portal", c.portal),
+                ("Utilities home", c.utilities_home),
+                ("Rates", c.rates_url),
+            ],
+        );
+    }
+    Ok(())
+}
+
+// --- config ---------------------------------------------------------------
+
+pub fn config_cmd(ctx: &Ctx, cmd: &ConfigCmd) -> Result<()> {
+    match cmd {
+        ConfigCmd::Path => {
+            let p = Config::default_path()?;
+            println!("{}", p.display());
+            Ok(())
+        }
+        ConfigCmd::Init => {
+            let existing = Config::load()?;
+            let path = existing.save()?;
+            println!("✓ Wrote config to {}", path.display());
+            println!("Edit it to set your username, or run `tojfl auth login --save`.");
+            Ok(())
+        }
+        ConfigCmd::Show => {
+            if ctx.fmt.json {
+                ctx.fmt.print_json(&ctx.cfg)?;
+            } else {
+                ctx.fmt.print_kv(
+                    "Configuration",
+                    &[
+                        ("Username", opt(&ctx.cfg.username)),
+                        ("Default account", opt(&ctx.cfg.default_account)),
+                        ("Base URL", opt(&ctx.cfg.base_url)),
+                        ("Output", opt(&ctx.cfg.output)),
+                        (
+                            "Password in keychain",
+                            config::keychain_get()
+                                .ok()
+                                .flatten()
+                                .map(|_| "yes".to_string())
+                                .unwrap_or_else(|| "no".to_string()),
+                        ),
+                    ],
+                );
+            }
+            Ok(())
+        }
+        ConfigCmd::SetPassword => {
+            let pw = prompt_password("Portal password: ")?;
+            config::keychain_set(&pw)?;
+            println!("✓ Password stored in the OS keychain.");
+            Ok(())
+        }
+        ConfigCmd::ClearPassword => {
+            config::keychain_clear()?;
+            println!("✓ Password removed from the OS keychain.");
+            Ok(())
+        }
+    }
+}
+
+// --- helpers --------------------------------------------------------------
+
+fn resolve_password(args: &LoginArgs) -> Result<String> {
+    if let Ok(pw) = std::env::var("TOJFL_PASSWORD") {
+        if !pw.is_empty() {
+            return Ok(pw);
+        }
+    }
+    if args.password_stdin {
+        let mut buf = String::new();
+        std::io::stdin().read_to_string(&mut buf)?;
+        return Ok(buf.trim_end_matches(['\n', '\r']).to_string());
+    }
+    prompt_password("Portal password: ")
+}
+
+fn prompt_password(prompt: &str) -> Result<String> {
+    rpassword::prompt_password(prompt).context("reading password")
+}
+
+fn prompt_line(prompt: &str) -> Result<String> {
+    use std::io::Write;
+    print!("{prompt}");
+    std::io::stdout().flush()?;
+    let mut s = String::new();
+    std::io::stdin().read_line(&mut s)?;
+    Ok(s.trim().to_string())
+}
+
+fn open_in_browser(url: &str) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    let status = std::process::Command::new("open").arg(url).status();
+    #[cfg(target_os = "linux")]
+    let status = std::process::Command::new("xdg-open").arg(url).status();
+    #[cfg(target_os = "windows")]
+    let status = std::process::Command::new("cmd")
+        .args(["/C", "start", url])
+        .status();
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    let status: std::io::Result<std::process::ExitStatus> = Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "unsupported platform",
+    ));
+
+    status
+        .map(|_| ())
+        .with_context(|| format!("opening browser for {url}"))
+}
+
+fn fmt_num(n: f64) -> String {
+    if n.fract() == 0.0 {
+        format!("{}", n as i64)
+    } else {
+        format!("{n:.2}")
+    }
+}
+
+fn tri_state(b: Option<bool>) -> &'static str {
+    match b {
+        Some(true) => "enrolled",
+        Some(false) => "not enrolled",
+        None => "unknown",
+    }
+}

@@ -1,0 +1,31 @@
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock.orig
+
+# Local config, sessions, and anything that could contain account data / PII.
+# The CLI stores credentials, cookies, and cached account data outside the repo,
+# but guard against accidental commits regardless.
+/config.toml
+/*.toml.local
+tojfl.toml
+session.json
+cookies.txt
+*.cookies
+.env
+.env.*
+/scratch
+/private
+*.local.*
+
+# Cached scraped pages / responses used during development
+/fixtures/private
+*.private.html
+debug*.html
+response*.html
+
+# macOS
+.DS_Store
+
+# Local session/tooling metadata (not part of the project)
+.twapp-*.json

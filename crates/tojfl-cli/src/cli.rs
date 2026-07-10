@@ -1,0 +1,213 @@
+//! Command-line surface for `tojfl`, defined with clap-derive.
+
+use clap::{Args, Parser, Subcommand};
+
+/// tojfl — command-line client for the Town of Jupiter, FL utility portal.
+///
+/// View account and billing info, review usage, list transactions, and drive
+/// the one-time payment lookup. Credentials come from `--username`/env/keychain
+/// — never hard-coded. Add `--json` to any command for machine-readable output.
+#[derive(Debug, Parser)]
+#[command(name = "tojfl", version, about, long_about = None, propagate_version = true)]
+pub struct Cli {
+    #[command(flatten)]
+    pub global: GlobalOpts,
+
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+#[derive(Debug, Args)]
+pub struct GlobalOpts {
+    /// Emit JSON instead of formatted tables.
+    #[arg(long, global = true)]
+    pub json: bool,
+
+    /// Operate on this account number (overrides config default).
+    #[arg(long, global = true, value_name = "ACCOUNT")]
+    pub account: Option<String>,
+
+    /// Path to a config file (defaults to ./tojfl.toml then the OS config dir).
+    #[arg(long, global = true, value_name = "PATH")]
+    pub config: Option<String>,
+
+    /// Portal username (or set TOJFL_USERNAME).
+    #[arg(long, global = true, env = "TOJFL_USERNAME")]
+    pub username: Option<String>,
+
+    /// Override the portal base URL.
+    #[arg(long, global = true, value_name = "URL")]
+    pub base_url: Option<String>,
+
+    /// Verbose diagnostics on stderr.
+    #[arg(short, long, global = true)]
+    pub verbose: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Log in, log out, or check session status.
+    #[command(subcommand)]
+    Auth(AuthCmd),
+
+    /// Show account summary and linked accounts.
+    #[command(subcommand)]
+    Account(AccountCmd),
+
+    /// Show the current balance due.
+    Balance,
+
+    /// Billing history (statements).
+    #[command(subcommand)]
+    Bills(BillsCmd),
+
+    /// Metered water usage / consumption history.
+    #[command(subcommand)]
+    Usage(UsageCmd),
+
+    /// Ledger transactions (charges, payments, adjustments).
+    #[command(subcommand)]
+    Transactions(TransactionsCmd),
+
+    /// One-time payment lookup and hand-off to the hosted payment page.
+    #[command(subcommand)]
+    Pay(PayCmd),
+
+    /// Account holder profile.
+    #[command(subcommand)]
+    Profile(ProfileCmd),
+
+    /// Paperless / eBill enrollment status.
+    #[command(subcommand)]
+    Ebill(EbillCmd),
+
+    /// Show utility contact and service information.
+    Contact,
+
+    /// Manage local config and stored credentials.
+    #[command(subcommand)]
+    Config(ConfigCmd),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AuthCmd {
+    /// Authenticate and persist a session.
+    Login(LoginArgs),
+    /// Clear the saved session (and optionally the stored password).
+    Logout {
+        /// Also remove the password from the OS keychain.
+        #[arg(long)]
+        forget: bool,
+    },
+    /// Report whether a valid session exists.
+    Status,
+}
+
+#[derive(Debug, Args)]
+pub struct LoginArgs {
+    /// Save username to config and password to the OS keychain for next time.
+    #[arg(long)]
+    pub save: bool,
+    /// Read the password from stdin instead of prompting (for scripts/pipes).
+    #[arg(long)]
+    pub password_stdin: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AccountCmd {
+    /// Show the account summary (balance, due date, address). [default]
+    Show,
+    /// List accounts linked to this login.
+    List,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum BillsCmd {
+    /// List all statements in the billing history. [default]
+    List {
+        /// Only show the most recent N statements.
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+    /// Show just the most recent statement.
+    Latest,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum UsageCmd {
+    /// List usage periods. [default]
+    List {
+        /// Only show the most recent N periods.
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+    /// Show period-over-period consumption changes.
+    Compare,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TransactionsCmd {
+    /// List ledger transactions. [default]
+    List {
+        /// Only show the most recent N transactions.
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PayCmd {
+    /// Look up an account and report the amount due (no login required).
+    Quote(PayLookupArgs),
+    /// Look up an account and print (or open) the hosted payment page URL.
+    Open(PayOpenArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct PayLookupArgs {
+    /// 7-digit customer number (with leading zeros).
+    #[arg(long, short = 'c', value_name = "CUSTOMER")]
+    pub customer: String,
+    /// 6-digit account number (with leading zeros).
+    #[arg(long, short = 'a', value_name = "ACCOUNT")]
+    pub account: String,
+}
+
+#[derive(Debug, Args)]
+pub struct PayOpenArgs {
+    /// 7-digit customer number (with leading zeros).
+    #[arg(long, short = 'c', value_name = "CUSTOMER")]
+    pub customer: String,
+    /// 6-digit account number (with leading zeros).
+    #[arg(long, short = 'a', value_name = "ACCOUNT")]
+    pub account: String,
+    /// Open the hosted payment page in your default browser.
+    #[arg(long)]
+    pub open: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ProfileCmd {
+    /// Show the account holder profile. [default]
+    Show,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum EbillCmd {
+    /// Show paperless/eBill enrollment status.
+    Status,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ConfigCmd {
+    /// Print the resolved config file path.
+    Path,
+    /// Write a starter config file to the OS config dir.
+    Init,
+    /// Show the effective (loaded) configuration.
+    Show,
+    /// Store the portal password in the OS keychain.
+    SetPassword,
+    /// Remove the stored password from the OS keychain.
+    ClearPassword,
+}

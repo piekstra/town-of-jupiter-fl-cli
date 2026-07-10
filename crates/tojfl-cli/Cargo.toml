@@ -1,0 +1,22 @@
+[package]
+name = "tojfl-cli"
+description = "tojfl — command-line client for the Town of Jupiter, FL utility billing portal."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "tojfl"
+path = "src/main.rs"
+
+[dependencies]
+tojfl-sdk = { path = "../tojfl-sdk" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+comfy-table.workspace = true
+rpassword.workspace = true
