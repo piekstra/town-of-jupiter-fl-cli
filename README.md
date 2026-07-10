@@ -89,6 +89,7 @@ Service). Nothing sensitive is written into this repository — see
 | `tojfl pay open  -c CUST -a ACCT [--open]` | Print / open the hosted payment page URL |
 | `tojfl contact` | Utility contact & service info (offline) |
 | `tojfl config path\|init\|show\|set-password\|clear-password` | Manage local config & credentials |
+| `tojfl self-update [--check] [-y]` | Update the binary in place from the latest GitHub release |
 
 Add `--json` to any command for machine-readable output, `-v` for diagnostics.
 
@@ -105,6 +106,18 @@ tojfl pay open  -c 0000000 -a 000000 --open # open the secure payment page
 
 This tool **never handles card data.** It stops at the hosted processor page,
 by design — see below.
+
+## Updating
+
+```bash
+tojfl self-update --check   # is a newer release available?
+tojfl self-update           # download it and replace the binary in place
+```
+
+`self-update` pulls the build for your platform from this repo's GitHub
+Releases. New releases are produced by pushing a version tag (`git tag v0.2.0 &&
+git push origin v0.2.0`), which triggers the release workflow. If you installed
+via a package manager, use that manager's upgrade instead.
 
 ## Privacy & security
 

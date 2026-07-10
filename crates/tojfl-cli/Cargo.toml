@@ -20,3 +20,4 @@ serde_json.workspace = true
 anyhow.workspace = true
 comfy-table.workspace = true
 rpassword.workspace = true
+self_update.workspace = true

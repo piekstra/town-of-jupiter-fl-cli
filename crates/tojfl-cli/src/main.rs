@@ -3,6 +3,7 @@
 mod cli;
 mod commands;
 mod output;
+mod selfupdate;
 
 use clap::Parser;
 use cli::{Cli, Command};
@@ -61,5 +62,6 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Ebill(c) => commands::ebill(&ctx, c),
         Command::Contact => commands::contact(&ctx),
         Command::Config(c) => commands::config_cmd(&ctx, c),
+        Command::SelfUpdate(a) => selfupdate::run(a),
     }
 }

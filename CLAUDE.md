@@ -71,6 +71,15 @@ fixtures — no network. `Money`, DNN field extraction, each table parser, and t
 payment helpers are covered. Public flows are additionally exercised against the
 live site by hand (`tojfl contact`, `tojfl pay quote …`).
 
+## Self-update & releases
+
+`crates/tojfl-cli/src/selfupdate.rs` (`tojfl self-update`) uses the `self_update`
+crate's GitHub backend to pull the platform binary from this repo's Releases and
+swap it in place. It matches assets by Rust target triple, so the release
+workflow (`.github/workflows/release.yml`, triggered by a `v*` tag) must name
+assets `tojfl-<tag>-<target>.tar.gz`. `self_update` uses native-tls (same as the
+portal client). `version.txt` mirrors the Cargo version for family-consistency.
+
 ## Commands
 
 ```bash

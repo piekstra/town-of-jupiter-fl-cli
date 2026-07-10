@@ -87,6 +87,19 @@ pub enum Command {
     /// Manage local config and stored credentials.
     #[command(subcommand)]
     Config(ConfigCmd),
+
+    /// Update tojfl in place from the latest GitHub release.
+    SelfUpdate(SelfUpdateArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct SelfUpdateArgs {
+    /// Only report whether a newer release exists; don't install it.
+    #[arg(long)]
+    pub check: bool,
+    /// Don't prompt for confirmation before replacing the binary.
+    #[arg(short = 'y', long)]
+    pub yes: bool,
 }
 
 #[derive(Debug, Subcommand)]
