@@ -29,3 +29,11 @@ install:
 
 clean:
 	$(CARGO) clean
+
+# Debug build re-signed with the stable pk-cli-codesign identity so macOS
+# keychain "Always Allow" grants survive rebuilds (see cli-common/scripts).
+dev:
+	cargo build
+	@if [ -x "$$HOME/Dev/cli-common/scripts/dev-sign.sh" ]; then \
+		"$$HOME/Dev/cli-common/scripts/dev-sign.sh" target/debug/tojfl; \
+	else echo "cli-common/scripts/dev-sign.sh not found — binary left ad-hoc signed"; fi
