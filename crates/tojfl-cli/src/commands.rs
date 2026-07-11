@@ -267,6 +267,13 @@ fn bills_get(
     items: &[tojfl_sdk::Bill],
     args: &BillsGetArgs,
 ) -> Result<()> {
+    // A raw PDF stream can't also be JSON — reject the conflict up front rather
+    // than silently ignoring --json (every other command honors it).
+    if ctx.fmt.json && args.output.as_deref() == Some("-") {
+        return Err(anyhow!(
+            "--json and `-o -` are mutually exclusive: a binary PDF can't be JSON-encoded"
+        ));
+    }
     if args.index == 0 || args.index > items.len() {
         return Err(anyhow!(
             "no statement at position {} — the billing history has {} statement(s)",
