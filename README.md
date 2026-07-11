@@ -37,7 +37,7 @@ Requires a Rust toolchain (1.82+).
 
 ```bash
 git clone https://github.com/piekstra/town-of-jupiter-fl-cli
-cd town-of-jupiter-fl
+cd town-of-jupiter-fl-cli
 cargo install --path crates/tojfl-cli   # installs the `tojfl` binary
 # or just: cargo build --release  ->  ./target/release/tojfl
 ```
