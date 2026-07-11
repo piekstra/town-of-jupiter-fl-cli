@@ -75,8 +75,8 @@ Service). Nothing sensitive is written into this repository — see
 | `tojfl auth login [--save] [--password-stdin]` | Authenticate and cache a session |
 | `tojfl auth logout [--forget]` | Clear the session (and optionally the keychain password) |
 | `tojfl auth status` | Report whether a valid session exists |
-| `tojfl account show` | Account summary: balance, due date, service address |
-| `tojfl account list` | Accounts linked to your login |
+| `tojfl account show` | Account summary: account #, balance, due date (for the active account) |
+| `tojfl account list` | All accounts linked to your login (#, name, service address, balances) |
 | `tojfl balance` | Just the current balance due |
 | `tojfl bills list [--limit N]` | Billing history (statements); a `PDF` column shows which are downloadable |
 | `tojfl bills latest` | Most recent statement |
@@ -93,6 +93,21 @@ Service). Nothing sensitive is written into this repository — see
 | `tojfl self-update [--check] [-y]` | Update the binary in place from the latest GitHub release |
 
 Add `--json` to any command for machine-readable output, `-v` for diagnostics.
+
+### Multiple accounts
+
+If several utility accounts are linked to your login, `tojfl account list` shows
+them all. Target a specific one with the global `--account <ACCOUNT#>` flag —
+it activates that account for the session before the command runs, so
+`account show`, `bills`, `usage`, and `transactions` all report that account:
+
+```bash
+tojfl account list
+tojfl --account 000000 bills list      # statements for account 000000
+tojfl --account 000000 usage list
+```
+
+Set `default_account` in your config to avoid repeating `--account`.
 
 ### Paying a bill
 

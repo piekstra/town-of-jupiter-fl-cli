@@ -355,33 +355,63 @@ pub fn parse_profile(html: &str) -> Profile {
     }
 }
 
-/// Extract a best-effort account summary from the post-login home page, which
-/// carries a `Customer/Account #:` label and embeds the billing-history grid.
+/// Extract the account summary from the post-login home page. Its `acctInfo`
+/// panel renders `Label : Value` colon-separated spans — `Customer/Account #:
+/// <customer> - <account>`, `Balance : $X.XX`, `Due Date : …`, `Account Status
+/// : …` — which reflect the currently-selected account.
 pub fn parse_account_summary(html: &str) -> Account {
     let doc = Html::parse_document(html);
+    // Whole-page visible text with runs collapsed, so the colon-separated
+    // label/value spans read as one string for pattern matching.
+    let text: String = doc
+        .root_element()
+        .text()
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let cap = |re: &str, n: usize| -> Option<String> {
+        regex::Regex::new(re)
+            .ok()?
+            .captures(&text)?
+            .get(n)
+            .map(|m| m.as_str().trim().to_string())
+    };
+
+    // "Customer/Account #: 1234567 - 123456" → customer / account.
+    let (customer_number, account_number) =
+        match regex::Regex::new(r"Customer/Account\s*#:\s*(\d+)\s*-\s*(\d+)")
+            .ok()
+            .and_then(|re| {
+                re.captures(&text)
+                    .map(|c| (c[1].to_string(), c[2].to_string()))
+            }) {
+            Some((c, a)) => (c, a),
+            None => (String::new(), String::new()),
+        };
 
     let mut acct = Account {
-        balance: find_labeled_money(
-            &doc,
-            &["balance", "amount due", "current balance", "total due"],
-        ),
-        due_date: find_labeled_text(&doc, &["due date", "payment due"]),
-        service_address: find_labeled_text(&doc, &["service address"]),
-        name: find_labeled_text(&doc, &["account name", "name on account"]),
-        account_number: find_labeled_text(
-            &doc,
-            &["customer/account", "account #", "account number"],
-        )
-        .unwrap_or_default(),
+        customer_number,
+        account_number,
+        balance: cap(r"Balance\s*:\s*(\(?\$?[\d,]+\.\d{2}\)?)", 1)
+            .as_deref()
+            .and_then(Money::parse),
+        due_date: cap(r"Due Date\s*:\s*([\d/]+)", 1),
         ..Default::default()
     };
 
-    // The home page embeds the billing grid. If no balance was labeled directly,
-    // use the most recent bill's total as the current amount.
+    // Fallbacks: labeled cells (older layouts) then the embedded billing grid.
+    if acct.balance.is_none() {
+        acct.balance = find_labeled_money(&doc, &["balance", "amount due", "total due"]);
+    }
     if acct.balance.is_none() {
         if let Some(latest) = parse_bills(html).into_iter().next() {
             acct.balance = latest.amount.or(latest.balance);
         }
+    }
+    if acct.due_date.is_none() {
+        acct.due_date = find_labeled_text(&doc, &["due date", "payment due"]);
     }
     acct
 }

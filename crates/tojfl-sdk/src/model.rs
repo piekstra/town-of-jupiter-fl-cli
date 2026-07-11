@@ -101,6 +101,20 @@ pub struct Account {
     pub autopay: Option<bool>,
 }
 
+/// One account linked to the current login, as listed on `ListAccounts.aspx`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LinkedAccount {
+    pub account_number: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub past_due: Option<Money>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub balance: Option<Money>,
+}
+
 /// One bill/statement in the billing history.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bill {

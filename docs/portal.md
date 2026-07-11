@@ -76,6 +76,14 @@ HMAC, so it's account-specific and read from the grid per-row — only some
 statements, typically the most recent, expose one). Captured as each row's
 `row_links` entry so a link can never bind to the wrong bill.
 
+`ListAccounts.aspx` — lists the accounts linked to a login in a GridView
+(`…ListAccounts_GridView1`: Account #, Name, Service Address, Past Due, Balance).
+Each row's "Select" LinkButton fires
+`__doPostBack('…$ListAccounts$GridView1', 'Select$<rowIndex>')`, which activates
+that account server-side for the session so subsequent pages report its data.
+The Home page's `acctInfo` panel then shows `Customer/Account #: <cust> - <acct>`,
+`Balance : …`, `Due Date : …` for the active account. Handled in `accounts.rs`.
+
 `UsageHistory.aspx` — form-first: the `…$UsageHistory$ctlServices` service
 dropdown (option `Water`) is submitted via an **ImageButton**
 (`…$UsageHistory$ImageButton1`, posted as `name.x`/`name.y`); the consumption

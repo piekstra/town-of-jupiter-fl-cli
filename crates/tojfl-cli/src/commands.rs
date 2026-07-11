@@ -175,26 +175,36 @@ fn account_show(ctx: &Ctx) -> Result<()> {
 }
 
 fn account_list(ctx: &Ctx) -> Result<()> {
-    // The portal supports linking multiple accounts to one login; the summary
-    // page is the reliable source we scrape today. Present it as a one-row list.
     let portal = ctx.portal()?;
-    let acct = portal.account_summary()?;
+    let accounts = portal.list_accounts()?;
     if ctx.fmt.json {
-        ctx.fmt.print_json(&vec![&acct])?;
+        ctx.fmt.print_json(&accounts)?;
     } else {
+        let rows: Vec<Vec<String>> = accounts
+            .iter()
+            .map(|a| {
+                vec![
+                    a.account_number.clone(),
+                    opt(&a.name),
+                    opt(&a.service_address),
+                    opt(&a.past_due),
+                    opt(&a.balance),
+                ]
+            })
+            .collect();
         ctx.fmt.print_table(
-            &["Account #", "Name", "Balance", "Due"],
-            &[vec![
-                if acct.account_number.is_empty() {
-                    "—".into()
-                } else {
-                    acct.account_number.clone()
-                },
-                opt(&acct.name),
-                opt(&acct.balance),
-                opt(&acct.due_date),
-            ]],
+            &[
+                "Account #",
+                "Name",
+                "Service address",
+                "Past due",
+                "Balance",
+            ],
+            &rows,
         );
+        if accounts.len() > 1 {
+            eprintln!("Tip: target one with `tojfl --account <ACCOUNT#> <command>`.");
+        }
     }
     Ok(())
 }

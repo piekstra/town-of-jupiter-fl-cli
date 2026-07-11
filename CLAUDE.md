@@ -57,6 +57,10 @@ Authenticated (redirect to `Login` until a session cookie exists):
   is essential — "biggest table" grabs the nav menu.
 - `usage.rs` — `UsageHistory.aspx` is form-first; submits the service dropdown
   via its ImageButton (posted as `name.x`/`name.y`), then scrapes the grid.
+- `accounts.rs` — lists linked accounts and switches between them. Selecting an
+  account posts back `Select$<rowIndex>` to the ListAccounts GridView, activating
+  it for the session. `Portal::ready()` runs this before account-scoped reads
+  when `--account`/`default_account` is set (`account list` itself is not scoped).
 - `payment.rs` — public one-time-payment lookup. Validates digits, posts
   customer+account, reads the amount due and the hosted-page URL. Intentionally
   stops before card entry (that's on the processor's page).

@@ -17,6 +17,7 @@ pub const PASSWORD_RECOVERY: &str = "/SecurePasswordRecovery.aspx";
 pub const ONLINE_PAYMENT: &str = "/OnlinePayment.aspx";
 
 // --- Authenticated pages (redirect to Login until authed) -----------------
+pub const LIST_ACCOUNTS: &str = "/ListAccounts.aspx";
 pub const BILLING_HISTORY: &str = "/BillingHistory.aspx";
 pub const USAGE_HISTORY: &str = "/UsageHistory.aspx";
 pub const TRANSACTION_HISTORY: &str = "/TransactionHistory.aspx";

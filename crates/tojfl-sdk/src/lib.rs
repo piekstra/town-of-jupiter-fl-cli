@@ -18,6 +18,7 @@
 //! never from anything in this repository. Sessions are stored under the OS
 //! state dir with owner-only permissions.
 
+pub mod accounts;
 pub mod auth;
 pub mod client;
 pub mod config;
@@ -33,7 +34,9 @@ pub mod usage;
 use std::time::Duration;
 
 pub use error::{Error, Result};
-pub use model::{Account, Bill, Contact, Money, PaymentQuote, Profile, Transaction, UsageRecord};
+pub use model::{
+    Account, Bill, Contact, LinkedAccount, Money, PaymentQuote, Profile, Transaction, UsageRecord,
+};
 
 use client::Client;
 pub use config::Config;
@@ -49,6 +52,9 @@ pub struct Portal {
     /// so we can reject authenticated calls without a network round-trip (and
     /// without risking a scrape of a public page that merely looks empty).
     has_session: bool,
+    /// Account to activate before account-scoped reads (from `--account` /
+    /// config `default_account`). `None` uses whatever account is active.
+    active_account: Option<String>,
 }
 
 impl Portal {
@@ -76,6 +82,7 @@ impl Portal {
             base_url,
             username,
             has_session,
+            active_account: cfg.default_account.clone(),
         })
     }
 
@@ -129,25 +136,61 @@ impl Portal {
         }
     }
 
+    /// Gate for account-scoped reads: require a session, then activate the
+    /// requested account (if any) so the following page reports its data.
+    fn ready(&self) -> Result<()> {
+        self.ensure_authenticated()?;
+        if let Some(acct) = &self.active_account {
+            if !accounts::select(&self.client, acct)? {
+                return Err(accounts::not_linked(
+                    acct,
+                    &accounts::numbers(&self.client)?,
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    // --- linked accounts --------------------------------------------------
+
+    /// List the accounts linked to the current login.
+    pub fn list_accounts(&self) -> Result<Vec<LinkedAccount>> {
+        self.ensure_authenticated()?;
+        accounts::list(&self.client)
+    }
+
+    /// Activate a specific linked account for the session.
+    pub fn select_account(&self, account_number: &str) -> Result<()> {
+        self.ensure_authenticated()?;
+        if accounts::select(&self.client, account_number)? {
+            Ok(())
+        } else {
+            Err(accounts::not_linked(
+                account_number,
+                &accounts::numbers(&self.client)?,
+            ))
+        }
+    }
+
     // --- authenticated data ----------------------------------------------
 
     /// Account summary from the post-login landing page (balance, due date, ...).
     pub fn account_summary(&self) -> Result<Account> {
-        self.ensure_authenticated()?;
+        self.ready()?;
         let html = self.client.get_text(pages::HOME)?;
         Ok(scrape::parse_account_summary(&html))
     }
 
     /// Billing history (statements).
     pub fn bills(&self) -> Result<Vec<Bill>> {
-        self.ensure_authenticated()?;
+        self.ready()?;
         let html = self.client.get_text(pages::BILLING_HISTORY)?;
         Ok(scrape::parse_bills(&html))
     }
 
     /// Metered usage / consumption history (submits the service form if needed).
     pub fn usage(&self) -> Result<Vec<UsageRecord>> {
-        self.ensure_authenticated()?;
+        self.ready()?;
         usage::fetch(&self.client)
     }
 
@@ -155,7 +198,7 @@ impl Portal {
     /// eBill link, or if the portal returns something that isn't a PDF (e.g. an
     /// expired session bouncing to a login page).
     pub fn download_bill(&self, bill: &Bill) -> Result<Vec<u8>> {
-        self.ensure_authenticated()?;
+        self.ready()?;
         let url = bill.document_url.as_deref().ok_or_else(|| {
             Error::invalid("this statement has no downloadable PDF (no Web Bill link)")
         })?;
@@ -170,12 +213,13 @@ impl Portal {
 
     /// Ledger transaction history (charges, payments, adjustments).
     pub fn transactions(&self) -> Result<Vec<Transaction>> {
-        self.ensure_authenticated()?;
+        self.ready()?;
         let html = self.client.get_text(pages::TRANSACTION_HISTORY)?;
         Ok(scrape::parse_transactions(&html))
     }
 
     /// Account holder profile (from the DNN ManageUsers "Change Profile" page).
+    /// Profile is per-login, so it isn't account-scoped.
     pub fn profile(&self) -> Result<Profile> {
         self.ensure_authenticated()?;
         let html = self.client.get_text(pages::CHANGE_PROFILE)?;
