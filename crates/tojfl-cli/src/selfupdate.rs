@@ -7,7 +7,7 @@ use pk_cli_selfupdate::{SelfUpdateArgs, Updater};
 
 pub fn run(args: &SelfUpdateArgs, json: bool, quiet: bool) -> Result<()> {
     Updater {
-        repo: "piekstra/town-of-jupiter-fl".into(),
+        repo: "piekstra/town-of-jupiter-fl-cli".into(),
         binary: "tojfl".into(),
         target: env!("BUILD_TARGET").into(),
         current: env!("CARGO_PKG_VERSION").into(),

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
 
-const UA: &str = "tojfl/0.1 (+https://github.com/piekstra/town-of-jupiter-fl) reqwest";
+const UA: &str = "tojfl/0.1 (+https://github.com/piekstra/town-of-jupiter-fl-cli) reqwest";
 const MAX_REDIRECTS: usize = 10;
 
 /// A cookie-aware HTTP client bound to a single portal base URL.

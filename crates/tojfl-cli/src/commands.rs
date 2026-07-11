@@ -116,7 +116,7 @@ pub fn info(_ctx: &Ctx) -> Result<()> {
     let info = CliInfo::new(
         "tojfl",
         env!("CARGO_PKG_VERSION"),
-        "https://github.com/piekstra/town-of-jupiter-fl",
+        "https://github.com/piekstra/town-of-jupiter-fl-cli",
         AuthInfo {
             required: true,
             method: "password".into(),
