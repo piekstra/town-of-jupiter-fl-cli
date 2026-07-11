@@ -28,6 +28,7 @@ pub mod pages;
 pub mod payment;
 pub mod scrape;
 pub mod session;
+pub mod usage;
 
 use std::time::Duration;
 
@@ -144,11 +145,10 @@ impl Portal {
         Ok(scrape::parse_bills(&html))
     }
 
-    /// Metered usage / consumption history.
+    /// Metered usage / consumption history (submits the service form if needed).
     pub fn usage(&self) -> Result<Vec<UsageRecord>> {
         self.ensure_authenticated()?;
-        let html = self.client.get_text(pages::USAGE_HISTORY)?;
-        Ok(scrape::parse_usage(&html))
+        usage::fetch(&self.client)
     }
 
     /// Ledger transaction history (charges, payments, adjustments).
@@ -158,10 +158,10 @@ impl Portal {
         Ok(scrape::parse_transactions(&html))
     }
 
-    /// Account holder profile.
+    /// Account holder profile (from the DNN ManageUsers "Change Profile" page).
     pub fn profile(&self) -> Result<Profile> {
         self.ensure_authenticated()?;
-        let html = self.client.get_text(pages::USER_PROFILE)?;
+        let html = self.client.get_text(pages::CHANGE_PROFILE)?;
         Ok(scrape::parse_profile(&html))
     }
 

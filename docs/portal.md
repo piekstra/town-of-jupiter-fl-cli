@@ -69,11 +69,17 @@ biggest table" grabs the menu instead.
 | `TransactionHistory.aspx` | `…TransactionHistory_GridView1` | Date, Description, Amount, Balance |
 | `Home.aspx` (post-login) | embeds the billing grid | plus a `Customer/Account #:` label |
 
-Not yet wired up:
-- `UsageHistory.aspx` — form-first (`…$UsageHistory$ctlServices` service dropdown
-  + a submit LinkButton); the consumption grid appears only after that postback.
-- `UserProfile.aspx` — renders a DNN message inbox, not the profile fields; the
-  real profile surface is elsewhere.
+`UsageHistory.aspx` — form-first: the `…$UsageHistory$ctlServices` service
+dropdown (option `Water`) is submitted via an **ImageButton**
+(`…$UsageHistory$ImageButton1`, posted as `name.x`/`name.y`); the consumption
+grid then renders with a dedicated **Units** column. Handled in `usage.rs`.
+
+Profile: the "Change Profile" menu link points to **`ChangeProfile.aspx`** (DNN
+`ManageUsers`), NOT `UserProfile.aspx` (which is a message inbox). Its default
+view is the password/security form; the name/email profile properties load
+behind a "Manage Profile" tab (a further postback) — not yet wired up. The
+parser extracts only recognized profile properties, never the password/security
+fields.
 
 ## Scraping strategy
 

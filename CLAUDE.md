@@ -46,12 +46,17 @@ Authenticated (redirect to `Login` until a session cookie exists):
 ## Flows
 
 - `auth.rs` — GET `Login.aspx`, fill username/password, post back with the login
-  button as `__EVENTTARGET`. Success = have a DNN auth cookie and no longer see
-  the login form. `verify()` re-checks by fetching a protected page.
-- `scrape.rs` — generic `extract_tables()` reads every HTML table; per-page
-  parsers map columns to fields by **header keyword matching** and stash
-  unrecognized columns in each model's `extra` map. This is deliberately
-  tolerant of column drift between eCARE deployments.
+  button as `__EVENTTARGET`. The button is a DNN LinkButton, so the target is the
+  `$`-delimited UniqueID from its `__doPostBack` call (`find_postback_target`),
+  NOT the element id. Success = have a DNN auth cookie and no longer see the
+  login form. `verify()` re-checks by fetching a protected page.
+- `scrape.rs` — `extract_tables()` reads every table (dropping DNN menu/script
+  tables); parsers select the eCARE **GridView** by id (`is_data_grid`), then map
+  columns by **header keyword matching**, stashing unrecognized columns in each
+  model's `extra`. DNN renders menus as nested tables, so id-based grid selection
+  is essential — "biggest table" grabs the nav menu.
+- `usage.rs` — `UsageHistory.aspx` is form-first; submits the service dropdown
+  via its ImageButton (posted as `name.x`/`name.y`), then scrapes the grid.
 - `payment.rs` — public one-time-payment lookup. Validates digits, posts
   customer+account, reads the amount due and the hosted-page URL. Intentionally
   stops before card entry (that's on the processor's page).

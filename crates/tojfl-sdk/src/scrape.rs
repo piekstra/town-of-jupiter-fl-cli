@@ -241,26 +241,37 @@ pub fn parse_usage(html: &str) -> Vec<UsageRecord> {
     let c_qty = table.col(&["usage", "consumption", "gallons", "kgal", "ccf", "quantity"]);
     let c_days = table.col(&["days"]);
     let c_avg = table.col(&["average", "avg", "per day"]);
+    // The portal's grid carries the unit of measure in its own "Units" column.
+    let c_unit = table.col(&["units", "unit", "uom"]);
 
-    let unit = c_qty
+    // Unit falls back to sniffing the quantity column header if there's no
+    // dedicated units column.
+    let header_unit = c_qty
         .and_then(|i| table.headers.get(i))
-        .map(|h| detect_unit(h))
-        .unwrap_or(None);
+        .and_then(|h| detect_unit(h));
 
     table
         .rows
         .iter()
         .map(|row| {
             let get = |i: Option<usize>| i.and_then(|i| row.get(i)).cloned();
+            let unit = get(c_unit)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .or_else(|| header_unit.clone());
             UsageRecord {
                 period: get(c_period).unwrap_or_default(),
                 quantity: get(c_qty).as_deref().and_then(parse_number),
-                unit: unit.clone(),
+                unit,
                 days: get(c_days)
                     .as_deref()
                     .and_then(|s| parse_number(s).map(|n| n as u32)),
                 average_per_day: get(c_avg).as_deref().and_then(parse_number),
-                extra: build_extra(&table.headers, row, &[c_period, c_qty, c_days, c_avg]),
+                extra: build_extra(
+                    &table.headers,
+                    row,
+                    &[c_period, c_qty, c_days, c_avg, c_unit],
+                ),
             }
         })
         .collect()
@@ -299,27 +310,16 @@ pub fn parse_transactions(html: &str) -> Vec<Transaction> {
 /// generic label→value sweep.
 pub fn parse_profile(html: &str) -> Profile {
     let doc = Html::parse_document(html);
-    let mut p = Profile {
+    // Only pull explicitly-recognized profile properties. We deliberately do NOT
+    // sweep every text input: the ManageUsers page also carries password and
+    // security-question fields, which must never surface in `profile` output.
+    Profile {
         first_name: value_by_id_suffixes(&doc, &["FirstName", "txtFirstName", "First_Name"]),
         last_name: value_by_id_suffixes(&doc, &["LastName", "txtLastName", "Last_Name"]),
         email: value_by_id_suffixes(&doc, &["Email", "txtEmail", "Email_TextBox"]),
         username: value_by_id_suffixes(&doc, &["Username", "txtUsername", "DisplayName"]),
         ..Default::default()
-    };
-
-    // Sweep obvious label→value rows for anything else useful.
-    if let Ok(sel) = Selector::parse("input[type=text], input:not([type])") {
-        for el in doc.select(&sel) {
-            if let (Some(id), Some(val)) = (el.value().attr("id"), el.value().attr("value")) {
-                if val.trim().is_empty() {
-                    continue;
-                }
-                let key = id.rsplit('_').next().unwrap_or(id).to_string();
-                p.extra.entry(key).or_insert_with(|| val.trim().to_string());
-            }
-        }
     }
-    p
 }
 
 /// Extract a best-effort account summary from the post-login home page, which
@@ -504,6 +504,24 @@ mod tests {
         assert_eq!(usage[0].quantity, Some(3120.0));
         assert_eq!(usage[0].unit.as_deref(), Some("gallons"));
         assert_eq!(usage[0].days, Some(30));
+    }
+
+    #[test]
+    fn usage_unit_comes_from_units_column() {
+        // Mirrors the live grid: a dedicated "Units" column, not a unit baked
+        // into the quantity header.
+        let html = r#"<table id="UsageHistory_GridView1">
+            <tr><th>Read Date</th><th>Consumption</th><th>Units</th></tr>
+            <tr><td>06/2026</td><td>3,120</td><td>100 Gallons</td></tr>
+        </table>"#;
+        let u = parse_usage(html);
+        assert_eq!(u.len(), 1);
+        assert_eq!(u[0].quantity, Some(3120.0));
+        assert_eq!(u[0].unit.as_deref(), Some("100 Gallons"));
+        assert!(
+            u[0].extra.is_empty(),
+            "recognized columns should not leak to extra"
+        );
     }
 
     #[test]

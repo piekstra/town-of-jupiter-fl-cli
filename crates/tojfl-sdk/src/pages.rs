@@ -21,6 +21,9 @@ pub const BILLING_HISTORY: &str = "/BillingHistory.aspx";
 pub const USAGE_HISTORY: &str = "/UsageHistory.aspx";
 pub const TRANSACTION_HISTORY: &str = "/TransactionHistory.aspx";
 pub const USER_PROFILE: &str = "/UserProfile.aspx";
+/// The real profile surface (DNN ManageUsers). `UserProfile.aspx` shows a
+/// message inbox; the "Change Profile" menu link points here.
+pub const CHANGE_PROFILE: &str = "/ChangeProfile.aspx";
 
 /// True if a fetched page is actually the login page (i.e. we got bounced).
 ///

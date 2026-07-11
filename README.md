@@ -142,19 +142,19 @@ degrees:
 
 - **Validated end-to-end against a real logged-in account:** login (the DNN
   forms-auth postback), **account summary** (balance, due date, account
-  number), **billing history**, and **transaction history**. These read the
-  eCARE ASP.NET GridViews directly; the column heuristics preserve any
-  unrecognized columns in an `extra` map so nothing is dropped.
+  number), **billing history**, **transaction history**, and **usage** (which
+  submits the `UsageHistory.aspx` service-selection form, then reads the
+  consumption grid — period, quantity, and unit). These read the eCARE ASP.NET
+  GridViews directly; unrecognized columns are preserved in an `extra` map so
+  nothing is dropped.
 - **Fully exercised against the live site (public paths):** the login-form
   contract and the one-time-payment lookup (`OnlinePayment.aspx`).
-- **Known gaps (contributions welcome):**
-  - `usage` — `UsageHistory.aspx` is a form-first page; its consumption grid
-    only renders after a service type is selected and submitted. That
-    two-step postback isn't implemented yet, so `usage` currently returns
-    nothing rather than guessing.
-  - `profile` / `ebill` — the profile fields aren't on `UserProfile.aspx` (which
-    renders a message inbox); the correct DNN profile surface still needs wiring
-    up, so these return empty for now.
+- **Partial:** `profile` / `ebill` target the correct page (`ChangeProfile.aspx`,
+  DNN's ManageUsers module) but its default view is the password/security form;
+  the name/email profile fields load behind a "Manage Profile" tab (a further
+  postback) that isn't wired up yet, so these can return empty. The parser
+  deliberately extracts only known profile properties — it never surfaces the
+  password or security-question fields on that page.
 
 If a page's markup drifts, the parser degrades gracefully rather than crashing.
 
