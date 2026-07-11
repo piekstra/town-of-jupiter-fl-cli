@@ -154,6 +154,18 @@ pub enum BillsCmd {
     },
     /// Show just the most recent statement.
     Latest,
+    /// Download a statement PDF by position (1 = most recent).
+    Get(BillsGetArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct BillsGetArgs {
+    /// Which statement, 1-based (1 = most recent).
+    #[arg(value_name = "N", default_value = "1")]
+    pub index: usize,
+    /// Where to write the PDF (default: ./bill-<date>.pdf; use `-` for stdout).
+    #[arg(short, long, value_name = "PATH")]
+    pub output: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]

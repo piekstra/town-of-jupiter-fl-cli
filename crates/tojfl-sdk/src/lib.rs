@@ -151,6 +151,23 @@ impl Portal {
         usage::fetch(&self.client)
     }
 
+    /// Download a bill's statement PDF bytes. Errors if the bill carries no
+    /// eBill link, or if the portal returns something that isn't a PDF (e.g. an
+    /// expired session bouncing to a login page).
+    pub fn download_bill(&self, bill: &Bill) -> Result<Vec<u8>> {
+        self.ensure_authenticated()?;
+        let url = bill.document_url.as_deref().ok_or_else(|| {
+            Error::invalid("this statement has no downloadable PDF (no Web Bill link)")
+        })?;
+        let bytes = self.client.get_bytes(url)?;
+        if !bytes.starts_with(b"%PDF") {
+            return Err(Error::Portal(
+                "expected a PDF but got something else (session may have expired)".into(),
+            ));
+        }
+        Ok(bytes)
+    }
+
     /// Ledger transaction history (charges, payments, adjustments).
     pub fn transactions(&self) -> Result<Vec<Transaction>> {
         self.ensure_authenticated()?;

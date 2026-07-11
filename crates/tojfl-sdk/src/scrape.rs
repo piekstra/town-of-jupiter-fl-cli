@@ -11,13 +11,27 @@ use crate::model::{Account, Bill, Money, Profile, Transaction, UsageRecord};
 use scraper::{ElementRef, Html, Selector};
 use std::collections::BTreeMap;
 
+/// One parsed table row: its cell texts plus any per-row statement-PDF link.
+///
+/// Bundling the link with the cells (rather than a parallel `Vec`) makes the
+/// "link belongs to this row" invariant structural — the compiler keeps them
+/// together through any future filter/sort, so a link can never bind to the
+/// wrong bill.
+#[derive(Debug, Clone)]
+pub struct TableRow {
+    pub cells: Vec<String>,
+    /// The row's statement-PDF (`ctl=VieweBill`) link, if it has one. Only some
+    /// bills expose an eBill.
+    pub pdf_link: Option<String>,
+}
+
 /// A simple parsed HTML table.
 #[derive(Debug, Clone)]
 pub struct Table {
     /// The table's `id` attribute, if any (used to find eCARE data grids).
     pub id: Option<String>,
     pub headers: Vec<String>,
-    pub rows: Vec<Vec<String>>,
+    pub rows: Vec<TableRow>,
 }
 
 impl Table {
@@ -73,6 +87,7 @@ pub fn extract_tables(html: &str) -> Vec<Table> {
     let tr_sel = Selector::parse("tr").unwrap();
     let th_sel = Selector::parse("th").unwrap();
     let td_sel = Selector::parse("td").unwrap();
+    let ebill_sel = Selector::parse(r#"a[href*="VieweBill"]"#).unwrap();
 
     let mut tables = Vec::new();
     for table in doc.select(&table_sel) {
@@ -105,7 +120,14 @@ pub fn extract_tables(html: &str) -> Vec<Table> {
             if cells.is_empty() || cells.iter().all(|c| c.is_empty()) {
                 continue;
             }
-            body.push(cells);
+            // Capture this row's statement-PDF link (if any) alongside its cells,
+            // scoped to the row so a link can never bind to the wrong bill.
+            let pdf_link = row
+                .select(&ebill_sel)
+                .next()
+                .and_then(|a| a.value().attr("href"))
+                .map(|h| h.replace("&amp;", "&"));
+            body.push(TableRow { cells, pdf_link });
         }
         if body.is_empty() {
             continue;
@@ -208,14 +230,21 @@ pub fn parse_bills(html: &str) -> Vec<Bill> {
         .rows
         .iter()
         .map(|row| {
-            let get = |i: Option<usize>| i.and_then(|i| row.get(i)).cloned();
+            let get = |i: Option<usize>| i.and_then(|i| row.cells.get(i)).cloned();
             Bill {
                 date: get(c_date).unwrap_or_default(),
                 amount: get(c_amount).as_deref().and_then(Money::parse),
                 balance: get(c_balance).as_deref().and_then(Money::parse),
                 due_date: get(c_due),
                 document_id: None,
-                extra: build_extra(&table.headers, row, &[c_date, c_amount, c_balance, c_due]),
+                // Per-row eBill link; only some bills expose a downloadable
+                // statement. Bundled with the row, so it can't misalign.
+                document_url: row.pdf_link.clone(),
+                extra: build_extra(
+                    &table.headers,
+                    &row.cells,
+                    &[c_date, c_amount, c_balance, c_due],
+                ),
             }
         })
         .collect()
@@ -254,7 +283,7 @@ pub fn parse_usage(html: &str) -> Vec<UsageRecord> {
         .rows
         .iter()
         .map(|row| {
-            let get = |i: Option<usize>| i.and_then(|i| row.get(i)).cloned();
+            let get = |i: Option<usize>| i.and_then(|i| row.cells.get(i)).cloned();
             let unit = get(c_unit)
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
@@ -269,7 +298,7 @@ pub fn parse_usage(html: &str) -> Vec<UsageRecord> {
                 average_per_day: get(c_avg).as_deref().and_then(parse_number),
                 extra: build_extra(
                     &table.headers,
-                    row,
+                    &row.cells,
                     &[c_period, c_qty, c_days, c_avg, c_unit],
                 ),
             }
@@ -293,13 +322,17 @@ pub fn parse_transactions(html: &str) -> Vec<Transaction> {
         .rows
         .iter()
         .map(|row| {
-            let get = |i: Option<usize>| i.and_then(|i| row.get(i)).cloned();
+            let get = |i: Option<usize>| i.and_then(|i| row.cells.get(i)).cloned();
             Transaction {
                 date: get(c_date).unwrap_or_default(),
                 description: get(c_desc).unwrap_or_default(),
                 amount: get(c_amount).as_deref().and_then(Money::parse),
                 balance: get(c_balance).as_deref().and_then(Money::parse),
-                extra: build_extra(&table.headers, row, &[c_date, c_desc, c_amount, c_balance]),
+                extra: build_extra(
+                    &table.headers,
+                    &row.cells,
+                    &[c_date, c_desc, c_amount, c_balance],
+                ),
             }
         })
         .collect()
@@ -504,6 +537,51 @@ mod tests {
         assert_eq!(usage[0].quantity, Some(3120.0));
         assert_eq!(usage[0].unit.as_deref(), Some("gallons"));
         assert_eq!(usage[0].days, Some(30));
+    }
+
+    #[test]
+    fn bills_capture_ebill_pdf_url() {
+        let html = r#"<table id="BillingHistory_GridView1">
+            <tr><th>Bill Date</th><th>Bill Total</th><th>Web Bill</th></tr>
+            <tr>
+              <td><a href="javascript:__doPostBack('x','')">06/16/2026</a></td>
+              <td>$84.21</td>
+              <td><a href="https://utilitybill.jupiter.fl.us/BillingHistory.aspx?mid=1&amp;ctl=VieweBill&amp;BH=abc">View</a></td>
+            </tr>
+        </table>"#;
+        let bills = parse_bills(html);
+        assert_eq!(bills.len(), 1);
+        assert_eq!(bills[0].date, "06/16/2026");
+        // The eBill URL is captured (entities decoded), the postback link ignored.
+        assert_eq!(
+            bills[0].document_url.as_deref(),
+            Some(
+                "https://utilitybill.jupiter.fl.us/BillingHistory.aspx?mid=1&ctl=VieweBill&BH=abc"
+            )
+        );
+    }
+
+    #[test]
+    fn bills_without_ebill_link_have_no_document_url() {
+        // Rows lacking a Web Bill link must yield `document_url: None` — this is
+        // the precondition `Portal::download_bill` rejects. Guards the case where
+        // (as on the live portal) only the most recent statement is downloadable.
+        let html = r#"<table id="BillingHistory_GridView1">
+            <tr><th>Bill Date</th><th>Bill Total</th><th>Web Bill</th></tr>
+            <tr><td>06/16/2026</td><td>$84.21</td>
+                <td><a href="https://x/BillingHistory.aspx?ctl=VieweBill&amp;BH=z">View</a></td></tr>
+            <tr><td>05/14/2026</td><td>$79.10</td><td>&nbsp;</td></tr>
+        </table>"#;
+        let bills = parse_bills(html);
+        assert_eq!(bills.len(), 2);
+        assert!(
+            bills[0].document_url.is_some(),
+            "row with a link is downloadable"
+        );
+        assert!(
+            bills[1].document_url.is_none(),
+            "row without a link must not carry a (mis-aligned) URL"
+        );
     }
 
     #[test]

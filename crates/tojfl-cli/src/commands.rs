@@ -217,16 +217,21 @@ pub fn balance(ctx: &Ctx) -> Result<()> {
 
 pub fn bills(ctx: &Ctx, cmd: &BillsCmd) -> Result<()> {
     let portal = ctx.portal()?;
-    let mut items = portal.bills()?;
+    let items = portal.bills()?;
+
+    if let BillsCmd::Get(args) = cmd {
+        return bills_get(ctx, &portal, &items, args);
+    }
+
+    let mut items = items;
     match cmd {
-        BillsCmd::Latest => {
-            items.truncate(1);
-        }
+        BillsCmd::Latest => items.truncate(1),
         BillsCmd::List { limit } => {
             if let Some(n) = limit {
                 items.truncate(*n);
             }
         }
+        BillsCmd::Get(_) => unreachable!("handled above"),
     }
     if ctx.fmt.json {
         ctx.fmt.print_json(&items)?;
@@ -239,11 +244,86 @@ pub fn bills(ctx: &Ctx, cmd: &BillsCmd) -> Result<()> {
                     opt(&b.amount),
                     opt(&b.balance),
                     opt(&b.due_date),
+                    if b.document_url.is_some() {
+                        "✓".into()
+                    } else {
+                        "—".into()
+                    },
                 ]
             })
             .collect();
         ctx.fmt
-            .print_table(&["Date", "Amount", "Balance", "Due date"], &rows);
+            .print_table(&["Date", "Amount", "Balance", "Due date", "PDF"], &rows);
+        if items.iter().any(|b| b.document_url.is_some()) {
+            eprintln!("Tip: download a statement with `tojfl bills get <N>` (1 = most recent).");
+        }
+    }
+    Ok(())
+}
+
+fn bills_get(
+    ctx: &Ctx,
+    portal: &Portal,
+    items: &[tojfl_sdk::Bill],
+    args: &BillsGetArgs,
+) -> Result<()> {
+    // A raw PDF stream can't also be JSON — reject the conflict up front rather
+    // than silently ignoring --json (every other command honors it).
+    if ctx.fmt.json && args.output.as_deref() == Some("-") {
+        return Err(anyhow!(
+            "--json and `-o -` are mutually exclusive: a binary PDF can't be JSON-encoded"
+        ));
+    }
+    if args.index == 0 || args.index > items.len() {
+        return Err(anyhow!(
+            "no statement at position {} — the billing history has {} statement(s)",
+            args.index,
+            items.len()
+        ));
+    }
+    let bill = &items[args.index - 1];
+    let pdf = portal
+        .download_bill(bill)
+        .context("downloading statement PDF")?;
+
+    if args.output.as_deref() == Some("-") {
+        use std::io::Write;
+        return std::io::stdout()
+            .write_all(&pdf)
+            .context("writing PDF to stdout");
+    }
+
+    let path = args.output.clone().unwrap_or_else(|| {
+        let safe: String = bill
+            .date
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect();
+        let stem = safe.trim_matches('-');
+        format!(
+            "bill-{}.pdf",
+            if stem.is_empty() {
+                args.index.to_string()
+            } else {
+                stem.to_string()
+            }
+        )
+    });
+    std::fs::write(&path, &pdf).with_context(|| format!("writing {path}"))?;
+
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&serde_json::json!({
+            "saved": path,
+            "bytes": pdf.len(),
+            "date": bill.date,
+        }))?;
+    } else {
+        println!(
+            "✓ Saved statement {} ({} bytes) to {}",
+            bill.date,
+            pdf.len(),
+            path
+        );
     }
     Ok(())
 }

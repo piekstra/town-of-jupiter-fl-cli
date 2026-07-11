@@ -69,6 +69,13 @@ biggest table" grabs the menu instead.
 | `TransactionHistory.aspx` | `…TransactionHistory_GridView1` | Date, Description, Amount, Balance |
 | `Home.aspx` (post-login) | embeds the billing grid | plus a `Customer/Account #:` label |
 
+The billing grid's **Web Bill** column links to the statement PDF: an absolute
+`BillingHistory.aspx?mid=…&ctl=VieweBill&BH=<token>` URL that streams
+`application/pdf` directly (the `BH` token base64-encodes the bill id plus an
+HMAC, so it's account-specific and read from the grid per-row — only some
+statements, typically the most recent, expose one). Captured as each row's
+`row_links` entry so a link can never bind to the wrong bill.
+
 `UsageHistory.aspx` — form-first: the `…$UsageHistory$ctlServices` service
 dropdown (option `Water`) is submitted via an **ImageButton**
 (`…$UsageHistory$ImageButton1`, posted as `name.x`/`name.y`); the consumption

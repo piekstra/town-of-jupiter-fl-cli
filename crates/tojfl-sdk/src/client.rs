@@ -126,6 +126,12 @@ impl Client {
         Ok(self.get(path)?.text()?)
     }
 
+    /// GET a URL and return the raw response body bytes (for binary downloads
+    /// such as statement PDFs).
+    pub fn get_bytes(&self, path: &str) -> Result<Vec<u8>> {
+        Ok(self.get(path)?.bytes()?.to_vec())
+    }
+
     /// POST a form-urlencoded body, following redirects (as GET) and capturing
     /// cookies. Returns the final response.
     pub fn post_form(&self, path: &str, form: &[(String, String)]) -> Result<Response> {

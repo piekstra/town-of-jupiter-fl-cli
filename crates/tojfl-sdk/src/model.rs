@@ -118,6 +118,9 @@ pub struct Bill {
     /// Bill/document identifier used to fetch the PDF, if present.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub document_id: Option<String>,
+    /// Absolute URL of the statement PDF (the grid's "Web Bill" / eBill link).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_url: Option<String>,
     /// Any additional labeled columns from the row, preserved verbatim.
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty", default)]
     pub extra: std::collections::BTreeMap<String, String>,

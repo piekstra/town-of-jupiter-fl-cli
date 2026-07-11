@@ -78,8 +78,9 @@ Service). Nothing sensitive is written into this repository — see
 | `tojfl account show` | Account summary: balance, due date, service address |
 | `tojfl account list` | Accounts linked to your login |
 | `tojfl balance` | Just the current balance due |
-| `tojfl bills list [--limit N]` | Billing history (statements) |
+| `tojfl bills list [--limit N]` | Billing history (statements); a `PDF` column shows which are downloadable |
 | `tojfl bills latest` | Most recent statement |
+| `tojfl bills get <N> [-o FILE]` | Download a statement PDF (1 = most recent; `-o -` writes to stdout) |
 | `tojfl usage list [--limit N]` | Metered water usage per period |
 | `tojfl usage compare` | Period-over-period consumption change (Δ and %) |
 | `tojfl transactions list [--limit N]` | Ledger: charges, payments, adjustments |
@@ -142,11 +143,11 @@ degrees:
 
 - **Validated end-to-end against a real logged-in account:** login (the DNN
   forms-auth postback), **account summary** (balance, due date, account
-  number), **billing history**, **transaction history**, and **usage** (which
-  submits the `UsageHistory.aspx` service-selection form, then reads the
-  consumption grid — period, quantity, and unit). These read the eCARE ASP.NET
-  GridViews directly; unrecognized columns are preserved in an `extra` map so
-  nothing is dropped.
+  number), **billing history** (incl. downloading a statement PDF via the grid's
+  eBill link), **transaction history**, and **usage** (which submits the
+  `UsageHistory.aspx` service-selection form, then reads the consumption grid —
+  period, quantity, and unit). These read the eCARE ASP.NET GridViews directly;
+  unrecognized columns are preserved in an `extra` map so nothing is dropped.
 - **Fully exercised against the live site (public paths):** the login-form
   contract and the one-time-payment lookup (`OnlinePayment.aspx`).
 - **Partial:** `profile` / `ebill` target the correct page (`ChangeProfile.aspx`,
