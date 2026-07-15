@@ -36,7 +36,7 @@ use std::time::Duration;
 pub use error::{Error, Result};
 pub use model::{
     Account, Bill, Contact, Enrollment, LinkedAccount, Money, PaymentQuote, Profile, ServiceInfo,
-    Transaction, UsageComparison, UsageRecord,
+    Summary, Transaction, UsageComparison, UsageRecord,
 };
 pub use usage::CompareTarget;
 
@@ -179,8 +179,51 @@ impl Portal {
     /// Account summary from the post-login landing page (balance, due date, ...).
     pub fn account_summary(&self) -> Result<Account> {
         self.ready()?;
+        self.fetch_account()
+    }
+
+    /// An at-a-glance overview (account summary + service snapshot + enrollment),
+    /// activating the account and authenticating once for the whole set.
+    pub fn summary(&self) -> Result<Summary> {
+        self.ready()?;
+        Ok(Summary {
+            account: self.fetch_account()?,
+            service: self.fetch_service()?,
+            enrollment: self.fetch_enrollment()?,
+        })
+    }
+
+    // Fetch helpers assume the caller already ran `ready()`, so `summary()` can
+    // compose several without repeating the auth/account-activation round-trips.
+    fn fetch_account(&self) -> Result<Account> {
         let html = self.client.get_text(pages::HOME)?;
         Ok(scrape::parse_account_summary(&html))
+    }
+
+    fn fetch_service(&self) -> Result<ServiceInfo> {
+        let html = self.client.get_text(pages::SERVICE_INFORMATION)?;
+        Ok(scrape::parse_service_info(&html))
+    }
+
+    fn fetch_enrollment(&self) -> Result<Enrollment> {
+        let ebill_html = self.client.get_text(pages::EBILL_REGISTRATION)?;
+        let account_number = scrape::account_number_from_page(&ebill_html);
+        let (paperless, ebill_email) = match &account_number {
+            Some(a) => scrape::parse_ebill(&ebill_html, a),
+            None => (None, None),
+        };
+        let autopay_html = self.client.get_text(pages::AUTOPAY)?;
+        let (autopay_plan, autopay_draw_day, autopay_draw_amount) =
+            scrape::parse_autopay(&autopay_html);
+        Ok(Enrollment {
+            account_number,
+            paperless,
+            ebill_email,
+            autopay: Some(autopay_plan.is_some()),
+            autopay_plan,
+            autopay_draw_day,
+            autopay_draw_amount,
+        })
     }
 
     /// Billing history (statements).
@@ -205,31 +248,13 @@ impl Portal {
     /// Service snapshot for the active account (last read/bill/payment).
     pub fn service_info(&self) -> Result<ServiceInfo> {
         self.ready()?;
-        let html = self.client.get_text(pages::SERVICE_INFORMATION)?;
-        Ok(scrape::parse_service_info(&html))
+        self.fetch_service()
     }
 
     /// Paperless (eBill) and autopay enrollment status for the active account.
     pub fn enrollment(&self) -> Result<Enrollment> {
         self.ready()?;
-        let ebill_html = self.client.get_text(pages::EBILL_REGISTRATION)?;
-        let account_number = scrape::account_number_from_page(&ebill_html);
-        let (paperless, ebill_email) = match &account_number {
-            Some(a) => scrape::parse_ebill(&ebill_html, a),
-            None => (None, None),
-        };
-        let autopay_html = self.client.get_text(pages::AUTOPAY)?;
-        let (autopay_plan, autopay_draw_day, autopay_draw_amount) =
-            scrape::parse_autopay(&autopay_html);
-        Ok(Enrollment {
-            account_number,
-            paperless,
-            ebill_email,
-            autopay: Some(autopay_plan.is_some()),
-            autopay_plan,
-            autopay_draw_day,
-            autopay_draw_amount,
-        })
+        self.fetch_enrollment()
     }
 
     /// Download a bill's statement PDF bytes. Errors if the bill carries no

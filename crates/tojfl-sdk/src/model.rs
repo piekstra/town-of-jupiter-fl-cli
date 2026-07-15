@@ -101,6 +101,17 @@ pub struct Account {
     pub autopay: Option<bool>,
 }
 
+/// An at-a-glance overview of the active account, composed from several pages.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Summary {
+    /// Account summary (account #, balance, due date).
+    pub account: Account,
+    /// Service snapshot (last read/bill/payment).
+    pub service: ServiceInfo,
+    /// Paperless + autopay enrollment.
+    pub enrollment: Enrollment,
+}
+
 /// Paperless (eBill) and autopay enrollment for the active account.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Enrollment {

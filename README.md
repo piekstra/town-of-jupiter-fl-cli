@@ -75,6 +75,7 @@ Service). Nothing sensitive is written into this repository — see
 | `tojfl auth login [--save] [--password-stdin]` | Authenticate and cache a session |
 | `tojfl auth logout [--forget]` | Clear the session (and optionally the keychain password) |
 | `tojfl auth status` | Report whether a valid session exists |
+| `tojfl summary` | At-a-glance overview: balance, due, last read/bill/payment, paperless + autopay |
 | `tojfl account show` | Account summary: account #, balance, due date (for the active account) |
 | `tojfl account list` | All accounts linked to your login (#, name, service address, balances) |
 | `tojfl balance` | Just the current balance due |

@@ -123,6 +123,7 @@ pub fn info(_ctx: &Ctx) -> Result<()> {
             login_hint: Some("tojfl auth login --save".into()),
         },
         &[
+            "summary",
             "account",
             "balance",
             "bills",
@@ -136,6 +137,40 @@ pub fn info(_ctx: &Ctx) -> Result<()> {
         ],
     );
     pk_cli_core::output::json(&serde_json::to_value(&info)?);
+    Ok(())
+}
+
+// --- summary --------------------------------------------------------------
+
+pub fn summary(ctx: &Ctx) -> Result<()> {
+    let portal = ctx.portal()?;
+    let s = portal.summary()?;
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&s)?;
+    } else {
+        let acct = if s.account.account_number.is_empty() {
+            opt(&s.enrollment.account_number)
+        } else {
+            s.account.account_number.clone()
+        };
+        let last_payment = match (&s.service.last_payment_amount, &s.service.last_payment_date) {
+            (None, None) => "—".to_string(),
+            (a, d) => format!("{} on {}", opt(a), opt(d)),
+        };
+        ctx.fmt.print_kv(
+            "Account Overview",
+            &[
+                ("Account #", acct),
+                ("Balance", opt(&s.account.balance)),
+                ("Due date", opt(&s.account.due_date)),
+                ("Last read date", opt(&s.service.last_read_date)),
+                ("Last bill", opt(&s.service.last_bill_amount)),
+                ("Last payment", last_payment),
+                ("Paperless", tri_state(s.enrollment.paperless).into()),
+                ("Autopay", tri_state(s.enrollment.autopay).into()),
+            ],
+        );
+    }
     Ok(())
 }
 

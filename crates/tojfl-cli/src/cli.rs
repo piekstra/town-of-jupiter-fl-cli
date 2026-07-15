@@ -60,6 +60,9 @@ pub enum Command {
     #[command(subcommand)]
     Auth(AuthCmd),
 
+    /// At-a-glance overview: balance, due, last read/bill/payment, enrollment.
+    Summary,
+
     /// Show account summary and linked accounts.
     #[command(subcommand)]
     Account(AccountCmd),
