@@ -27,7 +27,7 @@ pub struct Config {
     /// Override the portal base URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
-    /// Default output format ("table" | "json").
+    /// Default output format ("table" | "json" | "csv").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<String>,
     /// HTTP timeout in seconds.

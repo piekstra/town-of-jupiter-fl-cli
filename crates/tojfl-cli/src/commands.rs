@@ -1,5 +1,5 @@
 //! Command handlers. Each returns `anyhow::Result<()>` and prints its own
-//! output (table or JSON) via [`Format`].
+//! output (table, JSON, or CSV) via [`Format`].
 
 use crate::cli::*;
 use crate::output::{opt, Format};

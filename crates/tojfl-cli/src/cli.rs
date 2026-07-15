@@ -25,6 +25,10 @@ pub struct GlobalOpts {
     #[arg(long, global = true)]
     pub json: bool,
 
+    /// Emit CSV instead of formatted tables (row commands + single-record views).
+    #[arg(long, global = true, conflicts_with = "json")]
+    pub csv: bool,
+
     /// Operate on this account number (overrides config default).
     #[arg(long, global = true, value_name = "ACCOUNT")]
     pub account: Option<String>,

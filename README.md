@@ -95,7 +95,10 @@ Service). Nothing sensitive is written into this repository — see
 | `tojfl config path\|init\|show\|set-password\|clear-password` | Manage local config & credentials |
 | `tojfl self-update [--check] [-y]` | Update the binary in place from the latest GitHub release |
 
-Add `--json` to any command for machine-readable output, `-v` for diagnostics.
+Add `--json` to any command for machine-readable output, or `--csv` for a
+spreadsheet-friendly sheet (row commands and single-record views alike); `-v`
+adds diagnostics. The default mode can also be set with `output = "json"` /
+`"csv"` in the config file.
 
 ### Multiple accounts
 

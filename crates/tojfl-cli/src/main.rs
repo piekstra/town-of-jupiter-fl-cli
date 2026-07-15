@@ -73,11 +73,22 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         cfg.default_account = Some(a.clone());
     }
 
-    // JSON is on if --json is passed or config sets output = "json".
-    let json = cli.global.json || cfg.output.as_deref() == Some("json");
+    // Resolve the output mode. Explicit flags win over the config `output`
+    // setting; `--json` / `--csv` are mutually exclusive at the flag layer.
+    let (json, csv) = if cli.global.csv {
+        (false, true)
+    } else if cli.global.json {
+        (true, false)
+    } else {
+        match cfg.output.as_deref() {
+            Some("csv") => (false, true),
+            Some("json") => (true, false),
+            _ => (false, false),
+        }
+    };
 
     let ctx = Ctx {
-        fmt: Format::new(json),
+        fmt: Format::new(json, csv),
         username: cli.global.username.clone(),
         verbose: cli.global.verbose,
         cfg,
