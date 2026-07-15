@@ -89,6 +89,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Balance => commands::balance(&ctx),
         Command::Bills(c) => commands::bills(&ctx, c),
         Command::Usage(c) => commands::usage(&ctx, c),
+        Command::Meters { limit } => commands::meters(&ctx, *limit),
         Command::Transactions(c) => commands::transactions(&ctx, c),
         Command::Pay(c) => commands::pay(&ctx, c),
         Command::Profile(c) => commands::profile(&ctx, c),

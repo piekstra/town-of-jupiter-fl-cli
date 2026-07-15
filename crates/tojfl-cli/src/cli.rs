@@ -78,6 +78,13 @@ pub enum Command {
     #[command(subcommand)]
     Usage(UsageCmd),
 
+    /// Meter reading history (date, meter #, previous/current read, consumption).
+    Meters {
+        /// Only show the most recent N reads.
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+    },
+
     /// Ledger transactions (charges, payments, adjustments).
     #[command(subcommand)]
     Transactions(TransactionsCmd),

@@ -84,6 +84,7 @@ Service). Nothing sensitive is written into this repository — see
 | `tojfl bills get <N> [-o FILE]` | Download a statement PDF (1 = most recent; `-o -` writes to stdout) |
 | `tojfl usage list [--limit N]` | Metered water usage per period |
 | `tojfl usage compare [--against street\|region\|city]` | Consumption change period-over-period, or vs. a street/region/city average |
+| `tojfl meters [--limit N]` | Meter reading history: date, meter #, previous/current read, days, type, usage |
 | `tojfl transactions list [--limit N]` | Ledger: charges, payments, adjustments |
 | `tojfl profile show` | Account holder profile |
 | `tojfl ebill status` | Paperless / autopay enrollment status |
@@ -101,8 +102,8 @@ Add `--json` to any command for machine-readable output, `-v` for diagnostics.
 If several utility accounts are linked to your login, `tojfl account list` shows
 them all. Target a specific one with the global `--account <ACCOUNT#>` flag —
 it activates that account for the session before the command runs, so
-`account show`, `bills`, `usage`, `transactions`, and `ebill status` all report
-that account:
+`account show`, `bills`, `usage`, `meters`, `transactions`, and `ebill status`
+all report that account:
 
 ```bash
 tojfl account list
@@ -163,8 +164,11 @@ degrees:
   forms-auth postback), **account summary** (balance, due date, account
   number), **billing history** (incl. downloading a statement PDF via the grid's
   eBill link), **transaction history**, **usage** (service-selection form →
-  consumption grid; plus `--against` street/region/city comparison), **multi-
-  account** (`account list` + `--account` switching), and **`ebill status`**
+  consumption grid; plus `--against` street/region/city comparison), **meter
+  reads** (`MeterReadingHistory.aspx` service-selection form → reads grid: 4
+  reads returned with previous/current read, days, type, and consumption),
+  **multi-account** (`account list` + `--account` switching), and **`ebill
+  status`**
   (paperless + autopay enrollment, incl. the autopay plan/draw). These read the
   eCARE ASP.NET GridViews directly; unrecognized columns are preserved in an
   `extra` map so nothing is dropped.

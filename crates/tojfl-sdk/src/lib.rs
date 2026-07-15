@@ -35,8 +35,8 @@ use std::time::Duration;
 
 pub use error::{Error, Result};
 pub use model::{
-    Account, Bill, Contact, Enrollment, LinkedAccount, Money, PaymentQuote, Profile, ServiceInfo,
-    Summary, Transaction, UsageComparison, UsageRecord,
+    Account, Bill, Contact, Enrollment, LinkedAccount, MeterRead, Money, PaymentQuote, Profile,
+    ServiceInfo, Summary, Transaction, UsageComparison, UsageRecord,
 };
 pub use usage::CompareTarget;
 
@@ -243,6 +243,12 @@ impl Portal {
     pub fn usage_compare(&self, target: CompareTarget) -> Result<Vec<UsageComparison>> {
         self.ready()?;
         usage::compare(&self.client, target)
+    }
+
+    /// Meter-reading history (date, meter #, prev/current read, consumption).
+    pub fn meter_reads(&self) -> Result<Vec<MeterRead>> {
+        self.ready()?;
+        usage::fetch_meter_reads(&self.client)
     }
 
     /// Service snapshot for the active account (last read/bill/payment).

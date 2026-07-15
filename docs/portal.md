@@ -29,6 +29,7 @@ scrapers. Everything here is observable from the public, unauthenticated pages.
 | `/ServiceInformation.aspx` | auth | Service snapshot: two grids — service summary + last payment |
 | `/BillingHistory.aspx` | auth | Statements |
 | `/UsageHistory.aspx` | auth | Metered consumption |
+| `/MeterReadingHistory.aspx` | auth | Meter reads (previous/current, consumption) |
 | `/TransactionHistory.aspx` | auth | Ledger |
 | `/UserProfile.aspx` | auth | Message inbox (NOT the profile fields) |
 | `/ChangeProfile.aspx` | auth | Profile fields (DNN ManageUsers) |
@@ -100,6 +101,13 @@ The same page also drives **consumption comparison**: `…$ctlServices2` (servic
 (yours), `Avg Consumption For Your <group>`, Units. Scraped by
 `parse_comparison`; exposed as `usage compare --against <group>`.
 
+`MeterReadingHistory.aspx` — form-first like usage, but its `…$ctlServices`
+dropdown defaults to a `Select Service Type …` placeholder that submits an empty
+grid; `dnn::first_real_option` picks the first real service before the
+`…$ImageButton1` submit (`name.x`/`name.y`). The resulting `…GridView1` has Date,
+Meter #, Previous Read, Current Read, # of Days, Type of Reading, Consumption,
+Average. Scraped by `parse_meter_reads`; exposed as `tojfl meters`.
+
 Profile: the "Change Profile" menu link points to **`ChangeProfile.aspx`** (DNN
 `ManageUsers`), NOT `UserProfile.aspx` (which is a message inbox). Its default
 view is the password/security form; the name/email profile properties load
@@ -116,6 +124,8 @@ columns by header keywords:
 - **Bills:** date / amount / balance / due date
 - **Usage:** period / usage (unit sniffed from the header: gallons, kgal, CCF…) /
   days / average
+- **Meters:** date / meter # / previous read / current read / days / type /
+  consumption / average
 - **Transactions:** date / description / amount (credits parenthesized) / balance
 - **Profile:** DNN label→value pairs, matched by id suffix
 

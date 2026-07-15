@@ -235,6 +235,31 @@ pub struct UsageComparison {
     pub unit: Option<String>,
 }
 
+/// One meter read from `MeterReadingHistory.aspx`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeterRead {
+    /// Read date as text.
+    pub date: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_read: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_read: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub days: Option<u32>,
+    /// e.g. "Actual Read" / "Estimated".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reading_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consumption: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub average: Option<f64>,
+    /// Any additional labeled columns, preserved verbatim.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty", default)]
+    pub extra: std::collections::BTreeMap<String, String>,
+}
+
 /// A financial transaction (charge, payment, adjustment) on the ledger.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {

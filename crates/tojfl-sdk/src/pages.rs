@@ -23,6 +23,7 @@ pub const AUTOPAY: &str = "/AutoPaySelectAction.aspx";
 pub const SERVICE_INFORMATION: &str = "/ServiceInformation.aspx";
 pub const BILLING_HISTORY: &str = "/BillingHistory.aspx";
 pub const USAGE_HISTORY: &str = "/UsageHistory.aspx";
+pub const METER_READING_HISTORY: &str = "/MeterReadingHistory.aspx";
 pub const TRANSACTION_HISTORY: &str = "/TransactionHistory.aspx";
 pub const USER_PROFILE: &str = "/UserProfile.aspx";
 /// The real profile surface (DNN ManageUsers). `UserProfile.aspx` shows a

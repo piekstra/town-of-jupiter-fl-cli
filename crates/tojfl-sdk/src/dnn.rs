@@ -153,6 +153,36 @@ pub fn find_postback_target(html: &str, suffix: &str) -> Option<String> {
     re.find(html).map(|m| m.as_str().to_string())
 }
 
+/// For a `<select>` whose name ends with `suffix`, return the first option
+/// value that isn't a "Select …" placeholder — some eCARE service dropdowns
+/// default to a placeholder that submits to an empty grid.
+pub fn first_real_option(html: &str, suffix: &str) -> Option<String> {
+    let doc = Html::parse_document(html);
+    let sel = Selector::parse("select[name]").ok()?;
+    let opt = Selector::parse("option").ok()?;
+    for s in doc.select(&sel) {
+        if !s
+            .value()
+            .attr("name")
+            .map(|n| n.ends_with(suffix))
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        for o in s.select(&opt) {
+            let val = o.value().attr("value").unwrap_or("");
+            let text = o.text().collect::<String>();
+            let looks_placeholder = val.is_empty()
+                || val.to_lowercase().contains("select")
+                || text.to_lowercase().contains("select");
+            if !looks_placeholder {
+                return Some(val.to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Find the fully-qualified name of an element whose `id` ends with `suffix`.
 pub fn find_name_by_id_ending_with(html: &str, suffix: &str) -> Option<String> {
     let doc = Html::parse_document(html);
@@ -229,5 +259,29 @@ mod tests {
             find_postback_target(html, "cmdLogin").as_deref(),
             Some("dnn_ctr1216_Login_Login_DNN_cmdLogin")
         );
+    }
+
+    #[test]
+    fn first_real_option_skips_placeholder() {
+        // The meter-reads service dropdown leads with a "Select Service Type"
+        // placeholder that submits an empty grid; we must skip past it.
+        let html = r#"
+            <select name="dnn$ctr123$Meters$ctlServices">
+                <option value="">Select Service Type .....</option>
+                <option value="30">Water</option>
+            </select>"#;
+        assert_eq!(
+            first_real_option(html, "ctlServices").as_deref(),
+            Some("30")
+        );
+    }
+
+    #[test]
+    fn first_real_option_returns_none_when_only_placeholder() {
+        let html = r#"
+            <select name="dnn$ctr123$Meters$ctlServices">
+                <option value="">Select Service Type .....</option>
+            </select>"#;
+        assert!(first_real_option(html, "ctlServices").is_none());
     }
 }

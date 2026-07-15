@@ -8,7 +8,8 @@
 //! silently dropped.
 
 use crate::model::{
-    Account, Bill, Money, Profile, ServiceInfo, Transaction, UsageComparison, UsageRecord,
+    Account, Bill, MeterRead, Money, Profile, ServiceInfo, Transaction, UsageComparison,
+    UsageRecord,
 };
 use scraper::{ElementRef, Html, Selector};
 use std::collections::BTreeMap;
@@ -339,6 +340,55 @@ pub fn parse_comparison(html: &str) -> Vec<UsageComparison> {
                 unit: get(c_unit)
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty()),
+            }
+        })
+        .collect()
+}
+
+/// Parse the meter-reading grid into [`MeterRead`]s (Date, Meter #, Previous /
+/// Current Read, # of Days, Type of Reading, Consumption, Average).
+pub fn parse_meter_reads(html: &str) -> Vec<MeterRead> {
+    let tables = extract_tables(html);
+    let table = match best_grid(&tables, &["current", "meter", "consumption", "reading"]) {
+        Some(t) => t,
+        None => return Vec::new(),
+    };
+    let c_date = table.col(&["date"]);
+    let c_meter = table.col(&["meter"]);
+    let c_prev = table.col(&["previous"]);
+    let c_curr = table.col(&["current"]);
+    let c_days = table.col(&["days"]);
+    let c_type = table.col(&["type of reading", "type of", "reading type"]);
+    let c_cons = table.col(&["consumption"]);
+    let c_avg = table.col(&["average"]);
+
+    table
+        .rows
+        .iter()
+        .map(|row| {
+            let get = |i: Option<usize>| i.and_then(|i| row.cells.get(i)).cloned();
+            let num = |i: Option<usize>| get(i).as_deref().and_then(parse_number);
+            let text = |i: Option<usize>| {
+                get(i)
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+            };
+            MeterRead {
+                date: get(c_date).unwrap_or_default(),
+                meter: text(c_meter),
+                previous_read: num(c_prev),
+                current_read: num(c_curr),
+                days: num(c_days).map(|n| n as u32),
+                reading_type: text(c_type),
+                consumption: num(c_cons),
+                average: num(c_avg),
+                extra: build_extra(
+                    &table.headers,
+                    &row.cells,
+                    &[
+                        c_date, c_meter, c_prev, c_curr, c_days, c_type, c_cons, c_avg,
+                    ],
+                ),
             }
         })
         .collect()
@@ -843,6 +893,31 @@ mod tests {
             "average from the Avg Consumption column"
         );
         assert_eq!(c[0].unit.as_deref(), Some("100 Gallons"));
+    }
+
+    #[test]
+    fn parses_meter_reads_grid() {
+        // Mirrors the live MeterReadingHistory GridView: previous/current reads,
+        // days in the period, read type, and consumption.
+        let html = r#"<table id="MeterReadingHistory_GridView1">
+            <tr><th>Date</th><th>Meter #</th><th>Previous Read</th><th>Current Read</th><th># of Days</th><th>Type of Reading</th><th>Consumption</th><th>Average</th></tr>
+            <tr><td>Jun 12, 2026</td><td>987654</td><td>4,944</td><td>5,043</td><td>30</td><td>Actual Read</td><td>9.90</td><td>0.33</td></tr>
+        </table>"#;
+        let reads = parse_meter_reads(html);
+        assert_eq!(reads.len(), 1);
+        let r = &reads[0];
+        assert_eq!(r.date, "Jun 12, 2026");
+        assert_eq!(r.meter.as_deref(), Some("987654"));
+        assert_eq!(r.previous_read, Some(4944.0));
+        assert_eq!(r.current_read, Some(5043.0));
+        assert_eq!(r.days, Some(30));
+        assert_eq!(r.reading_type.as_deref(), Some("Actual Read"));
+        assert_eq!(r.consumption, Some(9.90));
+        assert_eq!(r.average, Some(0.33));
+        assert!(
+            r.extra.is_empty(),
+            "recognized columns should not leak to extra"
+        );
     }
 
     #[test]

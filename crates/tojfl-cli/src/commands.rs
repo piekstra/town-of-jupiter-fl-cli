@@ -128,6 +128,7 @@ pub fn info(_ctx: &Ctx) -> Result<()> {
             "balance",
             "bills",
             "usage",
+            "meters",
             "transactions",
             "pay",
             "profile",
@@ -494,6 +495,40 @@ fn usage_compare_group(ctx: &Ctx, portal: &Portal, group: CompareAgainst) -> Res
         ctx.fmt.print_table(
             &["Period", "Yours", &avg_header, "Unit", "Δ vs avg"],
             &table,
+        );
+    }
+    Ok(())
+}
+
+// --- meters ---------------------------------------------------------------
+
+pub fn meters(ctx: &Ctx, limit: Option<usize>) -> Result<()> {
+    let portal = ctx.portal()?;
+    let mut reads = portal.meter_reads()?;
+    if let Some(n) = limit {
+        reads.truncate(n);
+    }
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&reads)?;
+    } else {
+        let rows: Vec<Vec<String>> = reads
+            .iter()
+            .map(|r| {
+                let n = |v: &Option<f64>| v.map(fmt_num).unwrap_or_else(|| "—".into());
+                vec![
+                    r.date.clone(),
+                    opt(&r.meter),
+                    n(&r.previous_read),
+                    n(&r.current_read),
+                    r.days.map(|d| d.to_string()).unwrap_or_else(|| "—".into()),
+                    opt(&r.reading_type),
+                    n(&r.consumption),
+                ]
+            })
+            .collect();
+        ctx.fmt.print_table(
+            &["Date", "Meter", "Prev", "Current", "Days", "Type", "Usage"],
+            &rows,
         );
     }
     Ok(())
