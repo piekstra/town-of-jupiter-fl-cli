@@ -8,7 +8,8 @@ pub use pk_cli_selfupdate::SelfUpdateArgs;
 ///
 /// View account and billing info, review usage, list transactions, and drive
 /// the one-time payment lookup. Credentials come from `--username`/env/keychain
-/// — never hard-coded. Add `--json` to any command for machine-readable output.
+/// — never hard-coded. Add `--json` or `--csv` to any command for
+/// machine-readable output.
 #[derive(Debug, Parser)]
 #[command(name = "tojfl", version, about, long_about = None, propagate_version = true)]
 pub struct Cli {
