@@ -91,6 +91,12 @@ dropdown (option `Water`) is submitted via an **ImageButton**
 (`…$UsageHistory$ImageButton1`, posted as `name.x`/`name.y`); the consumption
 grid then renders with a dedicated **Units** column. Handled in `usage.rs`.
 
+The same page also drives **consumption comparison**: `…$ctlServices2` (service)
++ `…$ctlCompare` (option `Street` / `Region` / `CITY`) submitted via the
+`…$btnCompare` ImageButton renders `…GridView2` — Reading Date, Consumption
+(yours), `Avg Consumption For Your <group>`, Units. Scraped by
+`parse_comparison`; exposed as `usage compare --against <group>`.
+
 Profile: the "Change Profile" menu link points to **`ChangeProfile.aspx`** (DNN
 `ManageUsers`), NOT `UserProfile.aspx` (which is a message inbox). Its default
 view is the password/security form; the name/email profile properties load

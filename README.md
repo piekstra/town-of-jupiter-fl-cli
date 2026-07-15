@@ -82,7 +82,7 @@ Service). Nothing sensitive is written into this repository — see
 | `tojfl bills latest` | Most recent statement |
 | `tojfl bills get <N> [-o FILE]` | Download a statement PDF (1 = most recent; `-o -` writes to stdout) |
 | `tojfl usage list [--limit N]` | Metered water usage per period |
-| `tojfl usage compare` | Period-over-period consumption change (Δ and %) |
+| `tojfl usage compare [--against street\|region\|city]` | Consumption change period-over-period, or vs. a street/region/city average |
 | `tojfl transactions list [--limit N]` | Ledger: charges, payments, adjustments |
 | `tojfl profile show` | Account holder profile |
 | `tojfl ebill status` | Paperless / autopay enrollment status |

@@ -7,9 +7,28 @@
 use crate::client::Client;
 use crate::dnn::{find_input_name_ending_with, FormState};
 use crate::error::Result;
-use crate::model::UsageRecord;
+use crate::model::{UsageComparison, UsageRecord};
 use crate::pages;
 use crate::scrape;
+
+/// Which group average to compare your consumption against.
+#[derive(Debug, Clone, Copy)]
+pub enum CompareTarget {
+    Street,
+    Region,
+    City,
+}
+
+impl CompareTarget {
+    /// The `ctlCompare` option value the portal expects.
+    fn portal_value(self) -> &'static str {
+        match self {
+            CompareTarget::Street => "Street",
+            CompareTarget::Region => "Region",
+            CompareTarget::City => "CITY",
+        }
+    }
+}
 
 /// Fetch usage history, submitting the service-selection form if needed.
 pub fn fetch(client: &Client) -> Result<Vec<UsageRecord>> {
@@ -39,4 +58,30 @@ pub fn fetch(client: &Client) -> Result<Vec<UsageRecord>> {
         .unwrap_or_else(|| pages::USAGE_HISTORY.to_string());
     let body = client.post_form_text(&action, &form.to_pairs())?;
     Ok(scrape::parse_usage(&body))
+}
+
+/// Compare your consumption to a group average (street/region/city). Submits the
+/// comparison form (`ctlServices2` + `ctlCompare` + the `btnCompare` ImageButton)
+/// and scrapes the resulting grid.
+pub fn compare(client: &Client, target: CompareTarget) -> Result<Vec<UsageComparison>> {
+    let page = client.get_text(pages::USAGE_HISTORY)?;
+    let mut form = FormState::from_html(&page);
+
+    // Service defaults to the sole option (Water); set the comparison group.
+    if let Some(cmp) = find_input_name_ending_with(&page, "ctlCompare") {
+        form.set(&cmp, target.portal_value());
+    }
+    let btn = match find_input_name_ending_with(&page, "btnCompare") {
+        Some(b) => b,
+        None => return Ok(Vec::new()),
+    };
+    form.set(format!("{btn}.x"), "3");
+    form.set(format!("{btn}.y"), "3");
+
+    let action = form
+        .action
+        .clone()
+        .unwrap_or_else(|| pages::USAGE_HISTORY.to_string());
+    let body = client.post_form_text(&action, &form.to_pairs())?;
+    Ok(scrape::parse_comparison(&body))
 }

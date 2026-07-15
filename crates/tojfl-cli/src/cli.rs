@@ -176,8 +176,21 @@ pub enum UsageCmd {
         #[arg(long, value_name = "N")]
         limit: Option<usize>,
     },
-    /// Show period-over-period consumption changes.
-    Compare,
+    /// Compare consumption. Default: period-over-period. With `--against`,
+    /// compares to a street/region/city average from the portal.
+    Compare {
+        /// Compare to a group average instead of period-over-period.
+        #[arg(long, value_enum, value_name = "GROUP")]
+        against: Option<CompareAgainst>,
+    },
+}
+
+/// Group to compare consumption against (`usage compare --against`).
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum CompareAgainst {
+    Street,
+    Region,
+    City,
 }
 
 #[derive(Debug, Subcommand)]

@@ -35,8 +35,10 @@ use std::time::Duration;
 
 pub use error::{Error, Result};
 pub use model::{
-    Account, Bill, Contact, LinkedAccount, Money, PaymentQuote, Profile, Transaction, UsageRecord,
+    Account, Bill, Contact, LinkedAccount, Money, PaymentQuote, Profile, Transaction,
+    UsageComparison, UsageRecord,
 };
+pub use usage::CompareTarget;
 
 use client::Client;
 pub use config::Config;
@@ -192,6 +194,12 @@ impl Portal {
     pub fn usage(&self) -> Result<Vec<UsageRecord>> {
         self.ready()?;
         usage::fetch(&self.client)
+    }
+
+    /// Compare your consumption to a street/region/city average.
+    pub fn usage_compare(&self, target: CompareTarget) -> Result<Vec<UsageComparison>> {
+        self.ready()?;
+        usage::compare(&self.client, target)
     }
 
     /// Download a bill's statement PDF bytes. Errors if the bill carries no

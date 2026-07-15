@@ -7,7 +7,7 @@
 //! recognize are preserved verbatim in each model's `extra` map, so no data is
 //! silently dropped.
 
-use crate::model::{Account, Bill, Money, Profile, Transaction, UsageRecord};
+use crate::model::{Account, Bill, Money, Profile, Transaction, UsageComparison, UsageRecord};
 use scraper::{ElementRef, Html, Selector};
 use std::collections::BTreeMap;
 
@@ -301,6 +301,42 @@ pub fn parse_usage(html: &str) -> Vec<UsageRecord> {
                     &row.cells,
                     &[c_period, c_qty, c_days, c_avg, c_unit],
                 ),
+            }
+        })
+        .collect()
+}
+
+/// Parse the consumption-comparison grid (`GridView2`) into [`UsageComparison`]s.
+/// Columns: Reading Date, Consumption (yours), Avg Consumption For Your <group>,
+/// Units.
+pub fn parse_comparison(html: &str) -> Vec<UsageComparison> {
+    let tables = extract_tables(html);
+    let table = match best_grid(
+        &tables,
+        &["consumption", "reading", "average", "avg", "period"],
+    ) {
+        Some(t) => t,
+        None => return Vec::new(),
+    };
+    let c_period = table.col(&["reading", "date", "period", "month"]);
+    // "Consumption" precedes "Avg Consumption" in the header row, so the first
+    // consumption/usage match is the customer's own column.
+    let c_cons = table.col(&["consumption", "usage"]);
+    let c_avg = table.col(&["avg", "average"]);
+    let c_unit = table.col(&["units", "unit", "uom"]);
+
+    table
+        .rows
+        .iter()
+        .map(|row| {
+            let get = |i: Option<usize>| i.and_then(|i| row.cells.get(i)).cloned();
+            UsageComparison {
+                period: get(c_period).unwrap_or_default(),
+                consumption: get(c_cons).as_deref().and_then(parse_number),
+                average: get(c_avg).as_deref().and_then(parse_number),
+                unit: get(c_unit)
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty()),
             }
         })
         .collect()
@@ -612,6 +648,30 @@ mod tests {
             bills[1].document_url.is_none(),
             "row without a link must not carry a (mis-aligned) URL"
         );
+    }
+
+    #[test]
+    fn parses_comparison_grid() {
+        // Mirrors the live GridView2: "Consumption" (yours) precedes
+        // "Avg Consumption For Your <group>" (the average).
+        let html = r#"<table id="UsageHistory_GridView2">
+            <tr><th>Reading Date</th><th>&nbsp;</th><th>Consumption</th><th>Avg Consumption For Your Street</th><th>Units</th></tr>
+            <tr><td>Jun. 2026</td><td></td><td>9.90</td><td>12.50</td><td>100 Gallons</td></tr>
+        </table>"#;
+        let c = parse_comparison(html);
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].period, "Jun. 2026");
+        assert_eq!(
+            c[0].consumption,
+            Some(9.90),
+            "yours comes from the first Consumption column"
+        );
+        assert_eq!(
+            c[0].average,
+            Some(12.50),
+            "average from the Avg Consumption column"
+        );
+        assert_eq!(c[0].unit.as_deref(), Some("100 Gallons"));
     }
 
     #[test]

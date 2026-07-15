@@ -162,6 +162,22 @@ pub struct UsageRecord {
     pub extra: std::collections::BTreeMap<String, String>,
 }
 
+/// One period comparing your consumption to a group average (street/region/city).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsageComparison {
+    /// Read period label as text.
+    pub period: String,
+    /// Your consumption for the period, if parseable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consumption: Option<f64>,
+    /// The group's average consumption for the period, if parseable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub average: Option<f64>,
+    /// Unit of measure, if shown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+}
+
 /// A financial transaction (charge, payment, adjustment) on the ledger.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {

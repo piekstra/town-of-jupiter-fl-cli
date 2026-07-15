@@ -5,7 +5,7 @@ use crate::cli::*;
 use crate::output::{opt, Format};
 use anyhow::{anyhow, Context, Result};
 use std::io::Read;
-use tojfl_sdk::{config, Config, Portal};
+use tojfl_sdk::{config, CompareTarget, Config, Portal};
 
 /// Shared context threaded through handlers.
 pub struct Ctx {
@@ -342,11 +342,16 @@ fn bills_get(
 
 pub fn usage(ctx: &Ctx, cmd: &UsageCmd) -> Result<()> {
     let portal = ctx.portal()?;
-    let items = portal.usage()?;
     match cmd {
-        UsageCmd::Compare => usage_compare(ctx, &items),
+        UsageCmd::Compare {
+            against: Some(group),
+        } => usage_compare_group(ctx, &portal, *group),
+        UsageCmd::Compare { against: None } => {
+            let items = portal.usage()?;
+            usage_compare(ctx, &items)
+        }
         UsageCmd::List { limit } => {
-            let mut items = items;
+            let mut items = portal.usage()?;
             if let Some(n) = limit {
                 items.truncate(*n);
             }
@@ -419,6 +424,41 @@ fn usage_compare(ctx: &Ctx, items: &[tojfl_sdk::UsageRecord]) -> Result<()> {
             .collect();
         ctx.fmt
             .print_table(&["Period", "Usage", "Δ vs prior", "Δ %"], &rows);
+    }
+    Ok(())
+}
+
+fn usage_compare_group(ctx: &Ctx, portal: &Portal, group: CompareAgainst) -> Result<()> {
+    let (target, label) = match group {
+        CompareAgainst::Street => (CompareTarget::Street, "street"),
+        CompareAgainst::Region => (CompareTarget::Region, "region"),
+        CompareAgainst::City => (CompareTarget::City, "city"),
+    };
+    let rows = portal.usage_compare(target)?;
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&rows)?;
+    } else {
+        let avg_header = format!("{label} avg");
+        let table: Vec<Vec<String>> = rows
+            .iter()
+            .map(|r| {
+                let delta = match (r.consumption, r.average) {
+                    (Some(c), Some(a)) if a != 0.0 => format!("{:+.1}%", (c - a) / a * 100.0),
+                    _ => "—".into(),
+                };
+                vec![
+                    r.period.clone(),
+                    r.consumption.map(fmt_num).unwrap_or_else(|| "—".into()),
+                    r.average.map(fmt_num).unwrap_or_else(|| "—".into()),
+                    opt(&r.unit),
+                    delta,
+                ]
+            })
+            .collect();
+        ctx.fmt.print_table(
+            &["Period", "Yours", &avg_header, "Unit", "Δ vs avg"],
+            &table,
+        );
     }
     Ok(())
 }
