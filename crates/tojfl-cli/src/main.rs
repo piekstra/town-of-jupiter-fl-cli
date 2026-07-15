@@ -93,6 +93,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Pay(c) => commands::pay(&ctx, c),
         Command::Profile(c) => commands::profile(&ctx, c),
         Command::Ebill(c) => commands::ebill(&ctx, c),
+        Command::Service => commands::service(&ctx),
         Command::Contact => commands::contact(&ctx),
         Command::Config(c) => commands::config_cmd(&ctx, c),
         Command::SelfUpdate(a) => selfupdate::run(a, cli.global.json, cli.global.quiet),

@@ -91,6 +91,9 @@ pub enum Command {
     #[command(subcommand)]
     Ebill(EbillCmd),
 
+    /// Service snapshot: last read date, last bill, last payment (active account).
+    Service,
+
     /// Show utility contact and service information.
     Contact,
 

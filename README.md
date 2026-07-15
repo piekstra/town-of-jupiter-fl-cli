@@ -88,6 +88,7 @@ Service). Nothing sensitive is written into this repository — see
 | `tojfl ebill status` | Paperless / autopay enrollment status |
 | `tojfl pay quote -c CUST -a ACCT` | Look up an account and report the amount due (no login) |
 | `tojfl pay open  -c CUST -a ACCT [--open]` | Print / open the hosted payment page URL |
+| `tojfl service` | Service snapshot: last read date, last bill, last payment |
 | `tojfl contact` | Utility contact & service info (offline) |
 | `tojfl config path\|init\|show\|set-password\|clear-password` | Manage local config & credentials |
 | `tojfl self-update [--check] [-y]` | Update the binary in place from the latest GitHub release |

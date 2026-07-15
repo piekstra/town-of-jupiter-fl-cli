@@ -131,6 +131,7 @@ pub fn info(_ctx: &Ctx) -> Result<()> {
             "pay",
             "profile",
             "ebill",
+            "service",
             "contact",
         ],
     );
@@ -610,6 +611,37 @@ pub fn ebill(ctx: &Ctx, cmd: &EbillCmd) -> Result<()> {
                 ("Autopay plan", opt(&e.autopay_plan)),
                 ("Draw day", opt(&e.autopay_draw_day)),
                 ("Draw amount", opt(&e.autopay_draw_amount)),
+            ],
+        );
+    }
+    Ok(())
+}
+
+// --- service --------------------------------------------------------------
+
+pub fn service(ctx: &Ctx) -> Result<()> {
+    let portal = ctx.portal()?;
+    let s = portal.service_info()?;
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&s)?;
+    } else {
+        let payment = match (
+            &s.last_payment_description,
+            &s.last_payment_amount,
+            &s.last_payment_date,
+        ) {
+            (None, None, None) => "—".to_string(),
+            (d, a, dt) => format!("{} {} {}", opt(d), opt(a), opt(dt)),
+        };
+        ctx.fmt.print_kv(
+            "Service Information",
+            &[
+                ("Service", opt(&s.service)),
+                ("Last read date", opt(&s.last_read_date)),
+                ("Last bill date", opt(&s.last_bill_date)),
+                ("Last bill amount", opt(&s.last_bill_amount)),
+                ("Due date", opt(&s.due_date)),
+                ("Last payment", payment),
             ],
         );
     }

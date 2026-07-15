@@ -35,8 +35,8 @@ use std::time::Duration;
 
 pub use error::{Error, Result};
 pub use model::{
-    Account, Bill, Contact, Enrollment, LinkedAccount, Money, PaymentQuote, Profile, Transaction,
-    UsageComparison, UsageRecord,
+    Account, Bill, Contact, Enrollment, LinkedAccount, Money, PaymentQuote, Profile, ServiceInfo,
+    Transaction, UsageComparison, UsageRecord,
 };
 pub use usage::CompareTarget;
 
@@ -200,6 +200,13 @@ impl Portal {
     pub fn usage_compare(&self, target: CompareTarget) -> Result<Vec<UsageComparison>> {
         self.ready()?;
         usage::compare(&self.client, target)
+    }
+
+    /// Service snapshot for the active account (last read/bill/payment).
+    pub fn service_info(&self) -> Result<ServiceInfo> {
+        self.ready()?;
+        let html = self.client.get_text(pages::SERVICE_INFORMATION)?;
+        Ok(scrape::parse_service_info(&html))
     }
 
     /// Paperless (eBill) and autopay enrollment status for the active account.
