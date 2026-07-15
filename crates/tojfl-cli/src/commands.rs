@@ -596,15 +596,22 @@ pub fn profile(ctx: &Ctx, cmd: &ProfileCmd) -> Result<()> {
 pub fn ebill(ctx: &Ctx, cmd: &EbillCmd) -> Result<()> {
     let EbillCmd::Status = cmd;
     let portal = ctx.portal()?;
-    let acct = portal.account_summary()?;
+    let e = portal.enrollment()?;
     if ctx.fmt.json {
-        ctx.fmt.print_json(&serde_json::json!({
-            "paperless": acct.paperless,
-            "autopay": acct.autopay,
-        }))?;
+        ctx.fmt.print_json(&e)?;
     } else {
-        println!("Paperless / eBill: {}", tri_state(acct.paperless));
-        println!("Autopay / bank draft: {}", tri_state(acct.autopay));
+        ctx.fmt.print_kv(
+            "Enrollment",
+            &[
+                ("Account #", opt(&e.account_number)),
+                ("Paperless / eBill", tri_state(e.paperless).into()),
+                ("eBill email", opt(&e.ebill_email)),
+                ("Autopay / bank draft", tri_state(e.autopay).into()),
+                ("Autopay plan", opt(&e.autopay_plan)),
+                ("Draw day", opt(&e.autopay_draw_day)),
+                ("Draw amount", opt(&e.autopay_draw_amount)),
+            ],
+        );
     }
     Ok(())
 }

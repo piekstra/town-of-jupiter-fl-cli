@@ -35,7 +35,7 @@ use std::time::Duration;
 
 pub use error::{Error, Result};
 pub use model::{
-    Account, Bill, Contact, LinkedAccount, Money, PaymentQuote, Profile, Transaction,
+    Account, Bill, Contact, Enrollment, LinkedAccount, Money, PaymentQuote, Profile, Transaction,
     UsageComparison, UsageRecord,
 };
 pub use usage::CompareTarget;
@@ -200,6 +200,29 @@ impl Portal {
     pub fn usage_compare(&self, target: CompareTarget) -> Result<Vec<UsageComparison>> {
         self.ready()?;
         usage::compare(&self.client, target)
+    }
+
+    /// Paperless (eBill) and autopay enrollment status for the active account.
+    pub fn enrollment(&self) -> Result<Enrollment> {
+        self.ready()?;
+        let ebill_html = self.client.get_text(pages::EBILL_REGISTRATION)?;
+        let account_number = scrape::account_number_from_page(&ebill_html);
+        let (paperless, ebill_email) = match &account_number {
+            Some(a) => scrape::parse_ebill(&ebill_html, a),
+            None => (None, None),
+        };
+        let autopay_html = self.client.get_text(pages::AUTOPAY)?;
+        let (autopay_plan, autopay_draw_day, autopay_draw_amount) =
+            scrape::parse_autopay(&autopay_html);
+        Ok(Enrollment {
+            account_number,
+            paperless,
+            ebill_email,
+            autopay: Some(autopay_plan.is_some()),
+            autopay_plan,
+            autopay_draw_day,
+            autopay_draw_amount,
+        })
     }
 
     /// Download a bill's statement PDF bytes. Errors if the bill carries no

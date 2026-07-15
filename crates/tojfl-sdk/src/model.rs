@@ -101,6 +101,31 @@ pub struct Account {
     pub autopay: Option<bool>,
 }
 
+/// Paperless (eBill) and autopay enrollment for the active account.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Enrollment {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_number: Option<String>,
+    /// Enrolled in paperless / eBill.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paperless: Option<bool>,
+    /// The eBill notification email, if enrolled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ebill_email: Option<String>,
+    /// Enrolled in autopay / bank draft.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub autopay: Option<bool>,
+    /// Autopay plan description (e.g. "Autopay - Credit Card").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub autopay_plan: Option<String>,
+    /// Autopay draw day.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub autopay_draw_day: Option<String>,
+    /// Autopay draw amount.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub autopay_draw_amount: Option<Money>,
+}
+
 /// One account linked to the current login, as listed on `ListAccounts.aspx`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LinkedAccount {

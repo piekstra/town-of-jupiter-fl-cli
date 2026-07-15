@@ -452,6 +452,63 @@ pub fn parse_account_summary(html: &str) -> Account {
     acct
 }
 
+/// The active account number from a page's `acctInfo` panel (`lblAcctNum`).
+pub fn account_number_from_page(html: &str) -> Option<String> {
+    let doc = Html::parse_document(html);
+    value_by_id_suffixes(&doc, &["lblAcctNum"]).map(|s| s.trim().to_string())
+}
+
+/// Autopay fields from `AutoPaySelectAction.aspx`: `(plan, draw_day, draw_amount)`.
+/// The value spans are `txtPlanType` / `txtDrawDay` / `txtDrawAmount`; a
+/// non-empty plan means enrolled.
+pub fn parse_autopay(html: &str) -> (Option<String>, Option<String>, Option<Money>) {
+    let doc = Html::parse_document(html);
+    let nonempty = |s: String| Some(s.trim().to_string()).filter(|x| !x.is_empty());
+    let plan = value_by_id_suffixes(&doc, &["txtPlanType"]).and_then(nonempty);
+    let day = value_by_id_suffixes(&doc, &["txtDrawDay"]).and_then(nonempty);
+    let amount = value_by_id_suffixes(&doc, &["txtDrawAmount"])
+        .as_deref()
+        .and_then(Money::parse);
+    (plan, day, amount)
+}
+
+/// Paperless (eBill) status for `account` from `eBillRegistration.aspx`'s
+/// per-account grid: `(enrolled, notification email)`. Enrolled when the
+/// account's "eBill Registration Date" cell is populated.
+pub fn parse_ebill(html: &str, account: &str) -> (Option<bool>, Option<String>) {
+    let tables = extract_tables(html);
+    // The eBill grid's id is `…gvAccounts`, which isn't a "GridView", so match it
+    // by its distinctive headers rather than by id.
+    let table = match best_table(&tables, &["ebill registration", "register for", "email"]) {
+        Some(t) => t,
+        None => return (None, None),
+    };
+    let c_acct = table.col(&["account #", "account"]);
+    let c_date = table.col(&["ebill registration"]);
+    let c_email = table.col(&["email"]);
+
+    // Match tolerant of leading-zero differences between the label and the grid.
+    let want = account.trim().trim_start_matches('0');
+    let row = table.rows.iter().find(|r| {
+        c_acct
+            .and_then(|i| r.cells.get(i))
+            .map(|s| {
+                let c = s.trim();
+                c == account || c.trim_start_matches('0') == want
+            })
+            .unwrap_or(false)
+    });
+    match row {
+        Some(r) => {
+            let cell =
+                |c: Option<usize>| c.and_then(|i| r.cells.get(i)).map(|s| s.trim().to_string());
+            let registered = cell(c_date).map(|d| !d.is_empty()).unwrap_or(false);
+            (Some(registered), cell(c_email).filter(|s| !s.is_empty()))
+        }
+        None => (None, None),
+    }
+}
+
 // --- small parsing helpers -------------------------------------------------
 
 fn detect_unit(header: &str) -> Option<String> {
@@ -648,6 +705,32 @@ mod tests {
             bills[1].document_url.is_none(),
             "row without a link must not carry a (mis-aligned) URL"
         );
+    }
+
+    #[test]
+    fn parses_autopay_fields() {
+        let html = r#"
+            <span id="x_txtPlanType">Autopay - Credit Card (6 days before due date)</span>
+            <span id="x_txtDrawDay">0</span>
+            <span id="x_txtDrawAmount">$50.00</span>"#;
+        let (plan, day, amt) = parse_autopay(html);
+        assert!(plan.unwrap().contains("Credit Card"));
+        assert_eq!(day.as_deref(), Some("0"));
+        assert_eq!(amt, Some(Money::from_cents(5000)));
+    }
+
+    #[test]
+    fn parses_ebill_enrollment_per_account() {
+        let html = r#"<table id="gvAccounts">
+            <tr><th>Account #</th><th>eBill Registration Date</th><th>Email</th><th>Register for eBill?</th></tr>
+            <tr><td>111111</td><td>01/01/2026</td><td>a@b.com</td><td><input type="checkbox" checked></td></tr>
+            <tr><td>222222</td><td></td><td></td><td><input type="checkbox"></td></tr>
+        </table>"#;
+        let (p1, e1) = parse_ebill(html, "111111");
+        assert_eq!(p1, Some(true), "registration date present ⇒ enrolled");
+        assert_eq!(e1.as_deref(), Some("a@b.com"));
+        // Different account, not enrolled — and the enrollment binds to its own row.
+        assert_eq!(parse_ebill(html, "222222").0, Some(false));
     }
 
     #[test]

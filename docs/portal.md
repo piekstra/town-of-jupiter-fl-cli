@@ -24,6 +24,8 @@ scrapers. Everything here is observable from the public, unauthenticated pages.
 | `/ContactUs.aspx` | public | Contact info |
 | `/OnlinePayment.aspx` | public | One-time payment lookup (customer + account) |
 | `/ListAccounts.aspx` | auth | Accounts linked to the login (list + switch) |
+| `/eBillRegistration.aspx` | auth | Paperless enrollment (`gvAccounts` grid, per-account) |
+| `/AutoPaySelectAction.aspx` | auth | Autopay status (`txtPlanType`/`txtDrawDay`/`txtDrawAmount`) |
 | `/BillingHistory.aspx` | auth | Statements |
 | `/UsageHistory.aspx` | auth | Metered consumption |
 | `/TransactionHistory.aspx` | auth | Ledger |
