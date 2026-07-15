@@ -7,7 +7,9 @@
 //! recognize are preserved verbatim in each model's `extra` map, so no data is
 //! silently dropped.
 
-use crate::model::{Account, Bill, Money, Profile, Transaction, UsageComparison, UsageRecord};
+use crate::model::{
+    Account, Bill, Money, Profile, ServiceInfo, Transaction, UsageComparison, UsageRecord,
+};
 use scraper::{ElementRef, Html, Selector};
 use std::collections::BTreeMap;
 
@@ -452,6 +454,49 @@ pub fn parse_account_summary(html: &str) -> Account {
     acct
 }
 
+/// Parse `ServiceInformation.aspx`'s two single-row grids into [`ServiceInfo`]:
+/// the service summary (Service, Last Read/Bill Date, Due Date, Last Bill
+/// Amount) and the last-payment grid.
+pub fn parse_service_info(html: &str) -> ServiceInfo {
+    let tables = extract_tables(html);
+    let mut info = ServiceInfo::default();
+
+    // Service summary grid.
+    if let Some(t) = best_grid(&tables, &["last read", "last bill", "service"]) {
+        if let Some(row) = t.rows.first() {
+            let get = |kw: &[&str]| {
+                t.col(kw)
+                    .and_then(|i| row.cells.get(i))
+                    .map(|s| s.trim().to_string())
+            };
+            info.service = get(&["service"]).filter(|s| !s.is_empty());
+            info.last_read_date = get(&["last read"]).filter(|s| !s.is_empty());
+            info.last_bill_date = get(&["last bill date"]).filter(|s| !s.is_empty());
+            info.due_date = get(&["due date"]).filter(|s| !s.is_empty());
+            info.last_bill_amount = get(&["last bill amount", "bill amount"])
+                .as_deref()
+                .and_then(Money::parse);
+        }
+    }
+    // Last-payment grid.
+    if let Some(t) = best_grid(&tables, &["last payment", "payment description"]) {
+        if let Some(row) = t.rows.first() {
+            let get = |kw: &[&str]| {
+                t.col(kw)
+                    .and_then(|i| row.cells.get(i))
+                    .map(|s| s.trim().to_string())
+            };
+            info.last_payment_description =
+                get(&["payment description", "description"]).filter(|s| !s.is_empty());
+            info.last_payment_amount = get(&["payment amount", "amount"])
+                .as_deref()
+                .and_then(Money::parse);
+            info.last_payment_date = get(&["payment date", "date"]).filter(|s| !s.is_empty());
+        }
+    }
+    info
+}
+
 /// The active account number from a page's `acctInfo` panel (`lblAcctNum`).
 pub fn account_number_from_page(html: &str) -> Option<String> {
     let doc = Html::parse_document(html);
@@ -714,6 +759,31 @@ mod tests {
             bills[1].document_url.is_none(),
             "row without a link must not carry a (mis-aligned) URL"
         );
+    }
+
+    #[test]
+    fn parses_service_info_two_grids() {
+        let html = r#"
+            <table id="ServiceInformation_GridView1">
+                <tr><th>Service</th><th>&nbsp;</th><th>Last Read Date</th><th>Last Bill Date</th><th>Due Date</th><th>Last Bill Amount</th></tr>
+                <tr><td>Water</td><td></td><td>Jul 10, 2026</td><td>Jul 5, 2026</td><td>Aug 1, 2026</td><td>$84.21</td></tr>
+            </table>
+            <table id="ServiceInformation_GridView2">
+                <tr><th>Last Payment Description</th><th>&nbsp;</th><th>Last Payment Amount</th><th>Last Payment Date</th></tr>
+                <tr><td>Payment - Thank You</td><td></td><td>($84.21)</td><td>Jun 15, 2026</td></tr>
+            </table>"#;
+        let s = parse_service_info(html);
+        assert_eq!(s.service.as_deref(), Some("Water"));
+        assert_eq!(s.last_read_date.as_deref(), Some("Jul 10, 2026"));
+        assert_eq!(s.last_bill_date.as_deref(), Some("Jul 5, 2026"));
+        assert_eq!(s.due_date.as_deref(), Some("Aug 1, 2026"));
+        assert_eq!(s.last_bill_amount, Some(Money::from_cents(8421)));
+        assert_eq!(
+            s.last_payment_description.as_deref(),
+            Some("Payment - Thank You")
+        );
+        assert_eq!(s.last_payment_amount, Some(Money::from_cents(-8421)));
+        assert_eq!(s.last_payment_date.as_deref(), Some("Jun 15, 2026"));
     }
 
     #[test]

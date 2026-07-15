@@ -126,6 +126,27 @@ pub struct Enrollment {
     pub autopay_draw_amount: Option<Money>,
 }
 
+/// Service snapshot from `ServiceInformation.aspx` for the active account.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ServiceInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_read_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_bill_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_bill_amount: Option<Money>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_payment_description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_payment_amount: Option<Money>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_payment_date: Option<String>,
+}
+
 /// One account linked to the current login, as listed on `ListAccounts.aspx`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LinkedAccount {
