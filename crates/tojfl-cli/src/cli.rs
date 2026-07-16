@@ -252,6 +252,15 @@ pub enum TransactionsCmd {
         #[arg(long, value_name = "DATE")]
         until: Option<String>,
     },
+    /// Total charges, payments/credits, and net over the ledger.
+    Summary {
+        /// Only include transactions on or after this date (YYYY-MM-DD, MM/DD/YYYY, or "Mon DD, YYYY").
+        #[arg(long, value_name = "DATE")]
+        since: Option<String>,
+        /// Only include transactions on or before this date (YYYY-MM-DD, MM/DD/YYYY, or "Mon DD, YYYY").
+        #[arg(long, value_name = "DATE")]
+        until: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

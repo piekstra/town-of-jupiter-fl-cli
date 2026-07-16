@@ -99,6 +99,7 @@ password from the keychain if present; pipe one explicitly with
 | `tojfl usage stats [--since/--until DATE]` | Summary over usage history: periods, total, average, min/max period |
 | `tojfl meters [--limit N] [--since/--until DATE]` | Meter reading history: date, meter #, previous/current read, days, type, usage |
 | `tojfl transactions list [--limit N] [--since/--until DATE]` | Ledger: charges, payments, adjustments |
+| `tojfl transactions summary [--since/--until DATE]` | Totals: charges, payments/credits, and net over the ledger |
 | `tojfl profile show` | Account holder profile |
 | `tojfl ebill status` | Paperless / autopay enrollment status |
 | `tojfl pay quote -c CUST -a ACCT` | Look up an account and report the amount due (no login) |

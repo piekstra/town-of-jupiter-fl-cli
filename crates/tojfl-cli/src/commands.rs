@@ -599,16 +599,28 @@ pub fn meters(
 
 pub fn transactions(ctx: &Ctx, cmd: &TransactionsCmd) -> Result<()> {
     let portal = ctx.portal()?;
-    let mut items = portal.transactions()?;
-    let TransactionsCmd::List {
-        limit,
-        since,
-        until,
-    } = cmd;
+    let items = portal.transactions()?;
+    match cmd {
+        TransactionsCmd::List {
+            limit,
+            since,
+            until,
+        } => transactions_list(ctx, items, *limit, since, until),
+        TransactionsCmd::Summary { since, until } => transactions_summary(ctx, items, since, until),
+    }
+}
+
+fn transactions_list(
+    ctx: &Ctx,
+    mut items: Vec<tojfl_sdk::Transaction>,
+    limit: Option<usize>,
+    since: &Option<String>,
+    until: &Option<String>,
+) -> Result<()> {
     let (since, until) = date_bounds(since, until)?;
     items.retain(|t| tojfl_sdk::date::in_range(&t.date, since, until));
     if let Some(n) = limit {
-        items.truncate(*n);
+        items.truncate(n);
     }
     if ctx.fmt.json {
         ctx.fmt.print_json(&items)?;
@@ -626,6 +638,31 @@ pub fn transactions(ctx: &Ctx, cmd: &TransactionsCmd) -> Result<()> {
             .collect();
         ctx.fmt
             .print_table(&["Date", "Description", "Amount", "Balance"], &rows);
+    }
+    Ok(())
+}
+
+fn transactions_summary(
+    ctx: &Ctx,
+    mut items: Vec<tojfl_sdk::Transaction>,
+    since: &Option<String>,
+    until: &Option<String>,
+) -> Result<()> {
+    let (since, until) = date_bounds(since, until)?;
+    items.retain(|t| tojfl_sdk::date::in_range(&t.date, since, until));
+    let s = tojfl_sdk::TransactionSummary::from_transactions(&items);
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&s)?;
+    } else {
+        ctx.fmt.print_kv(
+            "Transaction Summary",
+            &[
+                ("Transactions", s.count.to_string()),
+                ("Charges", s.charges.to_string()),
+                ("Payments & credits", s.payments.to_string()),
+                ("Net", s.net.to_string()),
+            ],
+        );
     }
     Ok(())
 }

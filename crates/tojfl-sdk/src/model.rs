@@ -339,6 +339,47 @@ pub struct Transaction {
     pub extra: std::collections::BTreeMap<String, String>,
 }
 
+/// Totals over a set of ledger [`Transaction`]s. The portal signs amounts with
+/// charges/debits positive and payments/credits negative, so we split on sign.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactionSummary {
+    /// Transactions counted (those carrying an amount).
+    pub count: usize,
+    /// Sum of positive amounts (bills, fees).
+    pub charges: Money,
+    /// Sum of the negative amounts as a positive magnitude (payments + credits).
+    pub payments: Money,
+    /// Net change over the set (`charges − payments`); positive means you were
+    /// billed more than was paid/credited in the window.
+    pub net: Money,
+}
+
+impl TransactionSummary {
+    /// Sum a set of transactions into charge/payment/net totals. Transactions
+    /// without an amount are ignored; an empty set yields all-zero totals
+    /// (sums have a natural zero, unlike [`UsageStats`]'s min/max).
+    pub fn from_transactions(txns: &[Transaction]) -> TransactionSummary {
+        let mut count = 0usize;
+        let mut charge_cents = 0i64;
+        let mut credit_cents = 0i64; // running sum of the negative amounts (<= 0)
+        for t in txns {
+            let Some(amt) = t.amount else { continue };
+            count += 1;
+            if amt.cents >= 0 {
+                charge_cents += amt.cents;
+            } else {
+                credit_cents += amt.cents;
+            }
+        }
+        TransactionSummary {
+            count,
+            charges: Money::from_cents(charge_cents),
+            payments: Money::from_cents(-credit_cents),
+            net: Money::from_cents(charge_cents + credit_cents),
+        }
+    }
+}
+
 /// The account holder's profile as exposed by the DNN user profile page.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Profile {
@@ -453,6 +494,42 @@ mod tests {
         let records = vec![usage("Apr 2026", None, None)];
         assert!(UsageStats::from_records(&records).is_none());
         assert!(UsageStats::from_records(&[]).is_none());
+    }
+
+    fn txn(desc: &str, cents: Option<i64>) -> Transaction {
+        Transaction {
+            date: "Jun 16, 2026".into(),
+            description: desc.into(),
+            amount: cents.map(Money::from_cents),
+            balance: None,
+            extra: Default::default(),
+        }
+    }
+
+    #[test]
+    fn transaction_summary_splits_charges_and_payments() {
+        // A bill, a payment (credit), a late fee, and its reversal.
+        let txns = vec![
+            txn("Cycle Bill", Some(5676)),
+            txn("Payment - Thank You", Some(-5649)),
+            txn("Late Notice", Some(500)),
+            txn("Late Notice", Some(-500)),
+            txn("Pending", None), // no amount → ignored
+        ];
+        let s = TransactionSummary::from_transactions(&txns);
+        assert_eq!(s.count, 4, "the amount-less row isn't counted");
+        assert_eq!(s.charges, Money::from_cents(6176)); // 5676 + 500
+        assert_eq!(s.payments, Money::from_cents(6149)); // |−5649| + |−500|, positive
+        assert_eq!(s.net, Money::from_cents(27)); // 6176 − 6149
+    }
+
+    #[test]
+    fn transaction_summary_empty_is_zero() {
+        let s = TransactionSummary::from_transactions(&[]);
+        assert_eq!(s.count, 0);
+        assert_eq!(s.charges, Money::ZERO);
+        assert_eq!(s.payments, Money::ZERO);
+        assert_eq!(s.net, Money::ZERO);
     }
 
     #[test]
