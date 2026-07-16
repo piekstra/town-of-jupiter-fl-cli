@@ -32,6 +32,7 @@ pub mod scrape;
 pub mod session;
 pub mod usage;
 
+use std::cell::RefCell;
 use std::time::Duration;
 
 pub use error::{Error, Result};
@@ -49,7 +50,9 @@ use session::Session;
 pub struct Portal {
     client: Client,
     base_url: String,
-    username: Option<String>,
+    /// Cached display username. Behind a `RefCell` so a silent `&self` session
+    /// refresh can update it if it re-authenticates as a different user.
+    username: RefCell<Option<String>>,
     /// Whether a saved session was loaded (cookies seeded) for this base URL.
     /// A cheap, reliable gate: with no session we are definitely logged out,
     /// so we can reject authenticated calls without a network round-trip (and
@@ -94,7 +97,7 @@ impl Portal {
         Ok(Portal {
             client,
             base_url,
-            username,
+            username: RefCell::new(username),
             has_session,
             active_account: cfg.default_account.clone(),
             cfg: cfg.clone(),
@@ -107,8 +110,8 @@ impl Portal {
     }
 
     /// The username associated with the current session/config, if any.
-    pub fn username(&self) -> Option<&str> {
-        self.username.as_deref()
+    pub fn username(&self) -> Option<String> {
+        self.username.borrow().clone()
     }
 
     // --- authentication ---------------------------------------------------
@@ -116,7 +119,7 @@ impl Portal {
     /// Log in and persist the session. Returns the saved-session path.
     pub fn login(&mut self, username: &str, password: &str) -> Result<std::path::PathBuf> {
         auth::login(&self.client, username, password)?;
-        self.username = Some(username.to_string());
+        *self.username.borrow_mut() = Some(username.to_string());
         self.has_session = true;
         let sess = Session {
             cookies: self.client.snapshot_cookies(),
@@ -169,6 +172,8 @@ impl Portal {
             Err(_) => return Ok(false), // nothing stored to re-authenticate with
         };
         auth::login(&self.client, &creds.username, &creds.password)?;
+        // Reflect the refreshed identity so `username()` doesn't go stale.
+        *self.username.borrow_mut() = Some(creds.username.clone());
         // Persist the refreshed cookies so the next process starts authenticated.
         let sess = Session {
             cookies: self.client.snapshot_cookies(),

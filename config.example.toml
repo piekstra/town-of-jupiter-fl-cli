@@ -26,8 +26,13 @@
 # Override the portal base URL (rarely needed).
 # base_url = "https://utilitybill.jupiter.fl.us"
 
-# Default output format: "table" (human) or "json" (machine).
+# Default output format: "table" (human), "json", or "csv" (machine).
 output = "table"
+
+# Silently re-authenticate an expired session from stored credentials
+# (keychain/env/config) instead of erroring. Enabled by default; set to false
+# to require an explicit `tojfl auth login` after each session timeout.
+# auto_login = false
 
 # HTTP request timeout in seconds.
 timeout_secs = 30

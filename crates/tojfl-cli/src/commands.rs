@@ -22,7 +22,7 @@ impl Ctx {
             eprintln!(
                 "[tojfl] base_url={} authenticated_username={}",
                 portal.base_url(),
-                portal.username().unwrap_or("(none)")
+                portal.username().unwrap_or_else(|| "(none)".to_string())
             );
         }
         Ok(portal)
@@ -104,7 +104,7 @@ fn auth_status(ctx: &Ctx) -> Result<()> {
     let portal = ctx.portal()?;
     let authed = portal.is_authenticated().unwrap_or(false);
     let mut st = AuthStatus::new(true, authed, AuthMethod::Password);
-    st.username = portal.username().map(String::from);
+    st.username = portal.username();
     st.session_valid = Some(authed);
     st.emit(ctx.fmt.json);
     Ok(())
