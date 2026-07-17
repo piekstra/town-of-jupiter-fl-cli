@@ -186,9 +186,10 @@ pub fn snapshot(ctx: &Ctx, all_accounts: bool) -> Result<()> {
             // An array keeps the shape stable regardless of account count.
             ctx.fmt.print_json(&snaps)?;
         } else {
-            for s in &snaps {
-                print_snapshot_kv(ctx, s);
-            }
+            // Row-oriented (one row per account) so CSV stays a single valid
+            // table and each account is self-describing.
+            let rows: Vec<Vec<String>> = snaps.iter().map(snapshot_row).collect();
+            ctx.fmt.print_table(&SNAPSHOT_COLUMNS, &rows);
         }
     } else {
         let s = portal.snapshot()?;
@@ -201,13 +202,42 @@ pub fn snapshot(ctx: &Ctx, all_accounts: bool) -> Result<()> {
     Ok(())
 }
 
-/// Render one snapshot as a flattened key/value block (table/CSV).
-fn print_snapshot_kv(ctx: &Ctx, s: &tojfl_sdk::Snapshot) {
-    let last_payment = match (&s.last_payment_amount, &s.last_payment_date) {
+const SNAPSHOT_COLUMNS: [&str; 9] = [
+    "Account #",
+    "Balance",
+    "Due date",
+    "Past due",
+    "Last payment",
+    "Usage",
+    "Charges",
+    "Payments",
+    "Net",
+];
+
+/// A single snapshot as a row aligned to [`SNAPSHOT_COLUMNS`].
+fn snapshot_row(s: &tojfl_sdk::Snapshot) -> Vec<String> {
+    vec![
+        opt(&s.account),
+        opt(&s.balance),
+        opt(&s.due_date),
+        if s.past_due { "yes" } else { "no" }.into(),
+        snapshot_last_payment(s),
+        snapshot_usage(s),
+        s.ledger.charges.to_string(),
+        s.ledger.payments.to_string(),
+        s.ledger.net.to_string(),
+    ]
+}
+
+fn snapshot_last_payment(s: &tojfl_sdk::Snapshot) -> String {
+    match (&s.last_payment_amount, &s.last_payment_date) {
         (None, None) => "—".to_string(),
         (a, d) => format!("{} on {}", opt(a), opt(d)),
-    };
-    let usage = match &s.usage {
+    }
+}
+
+fn snapshot_usage(s: &tojfl_sdk::Snapshot) -> String {
+    match &s.usage {
         Some(u) => format!(
             "{} avg over {} periods{}",
             fmt_num(u.average),
@@ -218,20 +248,20 @@ fn print_snapshot_kv(ctx: &Ctx, s: &tojfl_sdk::Snapshot) {
                 .unwrap_or_default()
         ),
         None => "—".to_string(),
-    };
-    let title = match &s.account {
-        Some(a) => format!("Account Snapshot — {a}"),
-        None => "Account Snapshot".to_string(),
-    };
+    }
+}
+
+/// Render one snapshot as a flattened key/value block (single-account view).
+fn print_snapshot_kv(ctx: &Ctx, s: &tojfl_sdk::Snapshot) {
     ctx.fmt.print_kv(
-        &title,
+        "Account Snapshot",
         &[
             ("Account #", opt(&s.account)),
             ("Balance", opt(&s.balance)),
             ("Due date", opt(&s.due_date)),
             ("Past due", if s.past_due { "yes" } else { "no" }.into()),
-            ("Last payment", last_payment),
-            ("Usage", usage),
+            ("Last payment", snapshot_last_payment(s)),
+            ("Usage", snapshot_usage(s)),
             ("Ledger charges", s.ledger.charges.to_string()),
             ("Ledger payments", s.ledger.payments.to_string()),
             ("Ledger net", s.ledger.net.to_string()),
