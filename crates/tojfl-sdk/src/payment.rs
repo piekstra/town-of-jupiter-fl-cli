@@ -45,8 +45,12 @@ pub fn quote(client: &Client, customer_number: &str, account_number: &str) -> Re
         .unwrap_or_else(|| pages::ONLINE_PAYMENT.to_string());
     let body = client.post_form_text(&action, &form.to_pairs())?;
 
-    let amount_due = read_amount_due(&body);
     let hosted = find_hosted_payment_url(&body);
+    // Prefer a labeled amount on the page; otherwise the hosted URL carries the
+    // balance as an `Amount=` query parameter (the guest page doesn't render it
+    // as a label on this deployment).
+    let amount_due =
+        read_amount_due(&body).or_else(|| hosted.as_deref().and_then(amount_from_hosted_url));
     let message = read_message(&body);
     // Heuristic validity: we found a balance or a hosted page, and no error msg.
     let valid = (amount_due.is_some() || hosted.is_some())
@@ -115,6 +119,20 @@ fn read_message(html: &str) -> Option<String> {
     None
 }
 
+/// Read the balance from the hosted payment URL's `Amount=` query parameter
+/// (e.g. `…&Amount=56.76`). The key match is case-insensitive.
+fn amount_from_hosted_url(url: &str) -> Option<Money> {
+    let query = url.split('?').nth(1)?;
+    for pair in query.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            if k.eq_ignore_ascii_case("amount") {
+                return Money::parse(v);
+            }
+        }
+    }
+    None
+}
+
 fn find_hosted_payment_url(html: &str) -> Option<String> {
     // The portal opens the hosted page via window.open('...') or a redirect.
     if let Some(idx) = html.find("window.open(") {
@@ -164,6 +182,20 @@ mod tests {
             find_hosted_payment_url(html).as_deref(),
             Some("https://pay.example.com/session/abc")
         );
+    }
+
+    #[test]
+    fn reads_amount_from_hosted_url() {
+        let url = "https://paymentui.jupiter.fl.us/HP/Paymentus/ProcessPayment.aspx?PortalID=0&TextKey=TOJ123&UniqueID=abc&ExternalSource=10&Amount=56.76";
+        assert_eq!(amount_from_hosted_url(url), Some(Money::from_cents(5676)));
+        // Case-insensitive key; tolerates a param without a value.
+        assert_eq!(
+            amount_from_hosted_url("https://x/y?flag&amount=1,234.50"),
+            Some(Money::from_cents(123450))
+        );
+        // No amount param, or no query string → None.
+        assert_eq!(amount_from_hosted_url("https://x/y?PortalID=0"), None);
+        assert_eq!(amount_from_hosted_url("https://x/y"), None);
     }
 
     #[test]
