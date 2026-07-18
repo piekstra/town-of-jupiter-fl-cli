@@ -408,12 +408,23 @@ impl Portal {
     // --- public payment flow ---------------------------------------------
 
     /// Validate a customer/account pair and read the amount due (no login).
+    ///
+    /// This runs through a fresh **guest** client with no session cookies:
+    /// `OnlinePayment.aspx` 302-redirects an authenticated session to an
+    /// "Access Denied" page (the public one-time-payment form is for guests),
+    /// so reusing the logged-in client would break the lookup.
     pub fn payment_quote(
         &self,
         customer_number: &str,
         account_number: &str,
     ) -> Result<PaymentQuote> {
-        payment::quote(&self.client, customer_number, account_number)
+        payment::quote(&self.guest_client()?, customer_number, account_number)
+    }
+
+    /// A fresh client with no seeded session cookies, for public/guest flows.
+    fn guest_client(&self) -> Result<Client> {
+        let timeout = Duration::from_secs(self.cfg.timeout_secs.unwrap_or(30));
+        Client::new(&self.base_url, timeout)
     }
 
     /// Static contact / service information (no network call).

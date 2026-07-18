@@ -63,7 +63,12 @@ Authenticated (redirect to `Login` until a session cookie exists):
   when `--account`/`default_account` is set (`account list` itself is not scoped).
 - `payment.rs` — public one-time-payment lookup. Validates digits, posts
   customer+account, reads the amount due and the hosted-page URL. Intentionally
-  stops before card entry (that's on the processor's page).
+  stops before card entry (that's on the processor's page). Two non-obvious
+  constraints: (1) `OnlinePayment.aspx` 302s an **authenticated** session to
+  "Access Denied", so the lookup runs on a fresh **guest client**
+  (`Portal::guest_client`) with no session cookies; (2) the `GoButton` is a DNN
+  **ImageButton**, posted as `name.x`/`name.y` (a plain `name=value` no-ops the
+  postback).
 
 ## Credentials & state (never in the repo)
 

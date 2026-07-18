@@ -31,9 +31,12 @@ pub fn quote(client: &Client, customer_number: &str, account_number: &str) -> Re
     if let Some(go) = find_name_by_id_ending_with(&page, "GoButton")
         .or_else(|| find_input_name_ending_with(&page, "GoButton"))
     {
-        // GoButton is a real submit; post it as a named field so ASP.NET fires
-        // its click handler.
-        form.set(&go, "Go");
+        // GoButton is an ASP.NET ImageButton: its click is fired by posting
+        // `name.x`/`name.y` coordinate pairs, not a `name=value` field. Posting
+        // it as a plain field silently no-ops the postback (the page just
+        // re-renders unvalidated), so use the image-button convention.
+        form.set(format!("{go}.x"), "5");
+        form.set(format!("{go}.y"), "5");
     }
 
     let action = form
