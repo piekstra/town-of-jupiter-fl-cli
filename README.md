@@ -92,7 +92,7 @@ password from the keychain if present; pipe one explicitly with
 | `tojfl account show` | Account summary: account #, **name, service address**, balance, due date (for the active account) |
 | `tojfl account list` | All accounts linked to your login (#, name, service address, balances) |
 | `tojfl balance` | Just the current balance due |
-| `tojfl bills list [--limit N] [--since/--until DATE]` | Billing history (statements); a `PDF` column shows which are downloadable |
+| `tojfl bills list [--limit N] [--since/--until DATE]` | Billing history: current charges, bill total, balance forward per statement; a `PDF` column shows which are downloadable |
 | `tojfl bills latest` | Most recent statement |
 | `tojfl bills get <N> [-o FILE]` | Download a statement PDF (1 = most recent; `-o -` writes to stdout) |
 | `tojfl usage list [--limit N] [--since/--until DATE]` | Metered water usage per period |

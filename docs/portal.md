@@ -121,7 +121,9 @@ Data pages render HTML `<table>`s whose exact columns vary. Rather than pin
 selectors, `scrape::extract_tables` reads all tables and per-page parsers map
 columns by header keywords:
 
-- **Bills:** date / amount / balance / due date
+- **Bills:** date / current charges (`Current Bill`) / amount (`Bill Total`) /
+  balance forward (`Balance Forward`, the prior carried balance — *not* a running
+  balance after the statement) / due date
 - **Usage:** period / usage (unit sniffed from the header: gallons, kgal, CCF…) /
   days / average
 - **Meters:** date / meter # / previous read / current read / days / type /

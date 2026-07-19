@@ -225,8 +225,12 @@ pub fn parse_bills(html: &str) -> Vec<Bill> {
         None => return Vec::new(),
     };
     let c_date = table.col(&["date", "bill", "statement", "period"]);
-    let c_amount = table.col(&["amount", "charge", "bill amount", "total"]);
-    let c_balance = table.col(&["balance", "due"]);
+    // "Bill Total" is the statement total; "Current Bill" is this period's new
+    // charges; "Balance Forward" is the prior carried balance. Match each
+    // distinctly (order the keywords so the specific ones win).
+    let c_amount = table.col(&["bill total", "total", "amount"]);
+    let c_current = table.col(&["current bill", "current charge", "current"]);
+    let c_balance_forward = table.col(&["balance forward", "forward", "balance"]);
     let c_due = table.col(&["due date"]);
 
     table
@@ -237,7 +241,8 @@ pub fn parse_bills(html: &str) -> Vec<Bill> {
             Bill {
                 date: get(c_date).unwrap_or_default(),
                 amount: get(c_amount).as_deref().and_then(Money::parse),
-                balance: get(c_balance).as_deref().and_then(Money::parse),
+                current_charges: get(c_current).as_deref().and_then(Money::parse),
+                balance_forward: get(c_balance_forward).as_deref().and_then(Money::parse),
                 due_date: get(c_due),
                 document_id: None,
                 // Per-row eBill link; only some bills expose a downloadable
@@ -246,7 +251,7 @@ pub fn parse_bills(html: &str) -> Vec<Bill> {
                 extra: build_extra(
                     &table.headers,
                     &row.cells,
-                    &[c_date, c_amount, c_balance, c_due],
+                    &[c_date, c_amount, c_current, c_balance_forward, c_due],
                 ),
             }
         })
@@ -495,7 +500,7 @@ pub fn parse_account_summary(html: &str) -> Account {
     }
     if acct.balance.is_none() {
         if let Some(latest) = parse_bills(html).into_iter().next() {
-            acct.balance = latest.amount.or(latest.balance);
+            acct.balance = latest.amount.or(latest.balance_forward);
         }
     }
     if acct.due_date.is_none() {
@@ -750,6 +755,36 @@ mod tests {
         assert_eq!(bills[0].date, "06/01/2026");
         assert_eq!(bills[0].amount, Some(Money::from_cents(8421)));
         assert_eq!(bills[0].due_date.as_deref(), Some("06/21/2026"));
+    }
+
+    #[test]
+    fn bills_map_the_real_grid_columns() {
+        // The live grid: Balance Forward (prior), Current Bill (this period),
+        // Bill Total (their sum). Confirm each lands in the right field and that
+        // Bill Total == Balance Forward + Current Bill.
+        let html = r#"<table id="BillingHistory_GridView1">
+            <tr><th>Bill Date</th><th>Balance Forward</th><th>Current Bill</th><th>Bill Total</th><th>Web Bill</th></tr>
+            <tr><td>05/14/2026</td><td>$50.06</td><td>$61.63</td><td>$111.69</td><td>&nbsp;</td></tr>
+        </table>"#;
+        let bills = parse_bills(html);
+        assert_eq!(bills.len(), 1);
+        let b = &bills[0];
+        assert_eq!(b.balance_forward, Some(Money::from_cents(5006)));
+        assert_eq!(b.current_charges, Some(Money::from_cents(6163)));
+        assert_eq!(
+            b.amount,
+            Some(Money::from_cents(11169)),
+            "amount is Bill Total"
+        );
+        assert_eq!(
+            b.balance_forward.unwrap().cents + b.current_charges.unwrap().cents,
+            b.amount.unwrap().cents,
+            "forward + current == total"
+        );
+        assert!(
+            b.extra.is_empty(),
+            "recognized columns should not leak to extra"
+        );
     }
 
     #[test]

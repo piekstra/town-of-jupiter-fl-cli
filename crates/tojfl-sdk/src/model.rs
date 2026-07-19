@@ -221,12 +221,16 @@ pub struct LinkedAccount {
 pub struct Bill {
     /// Statement/bill date as text.
     pub date: String,
-    /// Amount billed on this statement.
+    /// Bill total for this statement (balance forward + current charges).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub amount: Option<Money>,
-    /// Balance after this statement, if shown.
+    /// New charges billed this period (the grid's "Current Bill" column).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub balance: Option<Money>,
+    pub current_charges: Option<Money>,
+    /// Balance carried forward from the prior statement (the grid's "Balance
+    /// Forward" column) — NOT a running balance after this statement.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub balance_forward: Option<Money>,
     /// Due date for this statement, if shown.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub due_date: Option<String>,

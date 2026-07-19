@@ -407,8 +407,9 @@ pub fn bills(ctx: &Ctx, cmd: &BillsCmd) -> Result<()> {
             .map(|b| {
                 vec![
                     b.date.clone(),
+                    opt(&b.current_charges),
                     opt(&b.amount),
-                    opt(&b.balance),
+                    opt(&b.balance_forward),
                     opt(&b.due_date),
                     if b.document_url.is_some() {
                         "✓".into()
@@ -418,8 +419,10 @@ pub fn bills(ctx: &Ctx, cmd: &BillsCmd) -> Result<()> {
                 ]
             })
             .collect();
-        ctx.fmt
-            .print_table(&["Date", "Amount", "Balance", "Due date", "PDF"], &rows);
+        ctx.fmt.print_table(
+            &["Date", "Current", "Total", "Fwd", "Due date", "PDF"],
+            &rows,
+        );
         if items.iter().any(|b| b.document_url.is_some()) {
             eprintln!("Tip: download a statement with `tojfl bills get <N>` (1 = most recent).");
         }
