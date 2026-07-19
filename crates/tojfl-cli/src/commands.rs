@@ -813,12 +813,26 @@ fn resolve_pay_target(
     }
     let portal = ctx.portal()?;
     let acct = portal.account_summary()?;
+    let (c, a) = derive_pay_numbers(customer, account, Some(&acct))?;
+    Ok((c, a, Some(acct)))
+}
+
+/// Fill the customer/account to pay, using the fetched active `acct` for any
+/// part not given explicitly. Pure (no IO) so it's unit-testable. Errors if a
+/// number can't be determined from either the flags or the account.
+fn derive_pay_numbers(
+    customer: &Option<String>,
+    account: &Option<String>,
+    acct: Option<&tojfl_sdk::Account>,
+) -> Result<(String, String)> {
     let c = customer
         .clone()
-        .unwrap_or_else(|| acct.customer_number.clone());
+        .or_else(|| acct.map(|a| a.customer_number.clone()))
+        .unwrap_or_default();
     let a = account
         .clone()
-        .unwrap_or_else(|| acct.account_number.clone());
+        .or_else(|| acct.map(|a| a.account_number.clone()))
+        .unwrap_or_default();
     if c.is_empty() || a.is_empty() {
         return Err(tojfl_sdk::Error::Invalid(
             "could not determine the customer/account to pay — pass -c and -a, \
@@ -827,7 +841,7 @@ fn resolve_pay_target(
         )
         .into());
     }
-    Ok((c, a, Some(acct)))
+    Ok((c, a))
 }
 
 fn pay_quote(
@@ -1260,8 +1274,40 @@ fn date_bound(value: &Option<String>, flag: &str) -> Result<Option<tojfl_sdk::da
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_config_key, portal_login_url};
-    use tojfl_sdk::Config;
+    use super::{apply_config_key, derive_pay_numbers, portal_login_url};
+    use tojfl_sdk::{Account, Config};
+
+    fn acct(cust: &str, num: &str) -> Account {
+        Account {
+            customer_number: cust.into(),
+            account_number: num.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn derive_pay_numbers_fills_from_active_account() {
+        let s = |x: &str| Some(x.to_string());
+        // Both explicit → used as-is; the account isn't needed.
+        assert_eq!(
+            derive_pay_numbers(&s("0000001"), &s("000002"), None).unwrap(),
+            ("0000001".into(), "000002".into())
+        );
+        // One explicit, one defaulted from the active account.
+        let a = acct("7654321", "654321");
+        assert_eq!(
+            derive_pay_numbers(&s("0000001"), &None, Some(&a)).unwrap(),
+            ("0000001".into(), "654321".into())
+        );
+        // Neither explicit → both from the active account.
+        assert_eq!(
+            derive_pay_numbers(&None, &None, Some(&a)).unwrap(),
+            ("7654321".into(), "654321".into())
+        );
+        // Nothing to derive from → usage error.
+        assert!(derive_pay_numbers(&None, &None, None).is_err());
+        assert!(derive_pay_numbers(&None, &None, Some(&acct("", ""))).is_err());
+    }
 
     #[test]
     fn portal_login_url_tolerates_trailing_slash() {

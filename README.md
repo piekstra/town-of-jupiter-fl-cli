@@ -155,8 +155,9 @@ tojfl pay quote -c 0000000 -a 000000        # or an explicit account (no login n
 ```
 
 When logged in, omit `-c/-a` and the customer/account come from your **active**
-account (honoring `--account`); the quote also shows the account **name and
-service address** so you can confirm you're paying the right premise.
+account (honoring `--account`); the quote also shows the account **name**
+(`account_name` in `--json`) and, in the default table view, the **service
+address**, so you can confirm you're paying the right premise.
 
 This tool **never handles card data.** It stops at the hosted processor page,
 by design — see below.
