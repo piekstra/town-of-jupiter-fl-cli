@@ -76,6 +76,10 @@ continues. Long-lived callers (dashboards, cron) keep working without a manual
 `tojfl auth logout` you stay logged out. Set `auto_login = false` in the config
 to disable it and require an explicit login after each expiry.
 
+Requests also **retry transient failures** — connection resets, timeouts, and
+429/502/503/504 responses — with a short exponential backoff (the portal is an
+old, occasionally-flaky server), so a blip doesn't fail a scripted run.
+
 For non-interactive login (no TTY to prompt at), `tojfl auth login` reads the
 password from the keychain if present; pipe one explicitly with
 `--password-stdin` (e.g. `op read … | tojfl auth login --password-stdin --save`).

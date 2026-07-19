@@ -18,6 +18,30 @@ use url::Url;
 
 const UA: &str = "tojfl/0.1 (+https://github.com/piekstra/town-of-jupiter-fl-cli) reqwest";
 const MAX_REDIRECTS: usize = 10;
+/// Total send attempts (so 2 retries) on a transient failure. The portal is an
+/// old single-TLS-suite server that occasionally resets or 503s; long-lived
+/// callers (dashboards, cron) benefit from riding out a blip.
+const MAX_ATTEMPTS: u32 = 3;
+const RETRY_BASE: Duration = Duration::from_millis(200);
+
+/// Whether an HTTP status is worth retrying — a server-side transient (rate
+/// limit or gateway/unavailable). 500 is excluded: it can mean the request was
+/// processed and then failed, so retrying could double-apply it.
+fn is_transient_status(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 429 | 502 | 503 | 504)
+}
+
+/// Whether a transport error is worth retrying: no or incomplete response
+/// (connect failure, timeout, reset), so a retry can't double-process a request.
+fn is_transient_error(e: &reqwest::Error) -> bool {
+    e.is_timeout() || e.is_connect() || e.is_request()
+}
+
+/// Exponential backoff after attempt `attempt` (1-based) failed: 200ms, 400ms,
+/// 800ms… capped so the exponent can't overflow.
+fn backoff_delay(attempt: u32) -> Duration {
+    RETRY_BASE * 2u32.pow(attempt.min(6).saturating_sub(1))
+}
 
 /// A cookie-aware HTTP client bound to a single portal base URL.
 pub struct Client {
@@ -105,16 +129,38 @@ impl Client {
         }
     }
 
+    /// Send a request, retrying transient transport errors and 429/5xx-gateway
+    /// responses with exponential backoff. `make` rebuilds the request for each
+    /// attempt (a `RequestBuilder` is single-use).
+    fn send_retrying(
+        &self,
+        make: impl Fn() -> reqwest::blocking::RequestBuilder,
+    ) -> Result<Response> {
+        let mut attempt = 0;
+        loop {
+            attempt += 1;
+            match make().send() {
+                Ok(resp) if is_transient_status(resp.status()) && attempt < MAX_ATTEMPTS => {
+                    std::thread::sleep(backoff_delay(attempt));
+                }
+                Ok(resp) => return Ok(resp),
+                Err(e) if is_transient_error(&e) && attempt < MAX_ATTEMPTS => {
+                    std::thread::sleep(backoff_delay(attempt));
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+    }
+
     /// GET a page, following redirects manually and capturing cookies.
     pub fn get(&self, path: &str) -> Result<Response> {
         let mut url = self.url(path)?;
-        let mut resp = self.http.get(url.clone()).send()?;
+        let mut resp = self.send_retrying(|| self.http.get(url.clone()))?;
         self.record_cookies(&resp);
         let mut hops = 0;
         while resp.status().is_redirection() && hops < MAX_REDIRECTS {
-            let next = self.redirect_target(&resp, &url)?;
-            url = next.clone();
-            resp = self.http.get(next).send()?;
+            url = self.redirect_target(&resp, &url)?;
+            resp = self.send_retrying(|| self.http.get(url.clone()))?;
             self.record_cookies(&resp);
             hops += 1;
         }
@@ -136,14 +182,16 @@ impl Client {
     /// cookies. Returns the final response.
     pub fn post_form(&self, path: &str, form: &[(String, String)]) -> Result<Response> {
         let url = self.url(path)?;
-        let mut resp = self.http.post(url.clone()).form(form).send()?;
+        // Safe to retry: the portal's POSTs are idempotent form-postbacks that
+        // re-fetch state (login, lookups) — none create a resource, so a replay
+        // can't double-submit anything.
+        let mut resp = self.send_retrying(|| self.http.post(url.clone()).form(form))?;
         self.record_cookies(&resp);
         let mut current = url;
         let mut hops = 0;
         while resp.status().is_redirection() && hops < MAX_REDIRECTS {
-            let next = self.redirect_target(&resp, &current)?;
-            current = next.clone();
-            resp = self.http.get(next).send()?;
+            current = self.redirect_target(&resp, &current)?;
+            resp = self.send_retrying(|| self.http.get(current.clone()))?;
             self.record_cookies(&resp);
             hops += 1;
         }
@@ -164,5 +212,38 @@ impl Client {
         current
             .join(loc)
             .map_err(|e| Error::parse(format!("bad redirect location `{loc}`: {e}")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{backoff_delay, is_transient_status};
+    use reqwest::StatusCode;
+    use std::time::Duration;
+
+    #[test]
+    fn transient_statuses_are_retryable() {
+        for s in [429u16, 502, 503, 504] {
+            assert!(
+                is_transient_status(StatusCode::from_u16(s).unwrap()),
+                "{s} retryable"
+            );
+        }
+        // 500 excluded (may have processed); success/auth/notfound are not transient.
+        for s in [200u16, 401, 404, 500] {
+            assert!(
+                !is_transient_status(StatusCode::from_u16(s).unwrap()),
+                "{s} not retryable"
+            );
+        }
+    }
+
+    #[test]
+    fn backoff_grows_and_is_bounded() {
+        assert_eq!(backoff_delay(1), Duration::from_millis(200));
+        assert_eq!(backoff_delay(2), Duration::from_millis(400));
+        assert_eq!(backoff_delay(3), Duration::from_millis(800));
+        // Capped exponent — never overflows for large attempt counts.
+        assert!(backoff_delay(100) <= Duration::from_millis(200) * 32);
     }
 }
