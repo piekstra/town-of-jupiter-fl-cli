@@ -114,6 +114,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Snapshot { all_accounts } => commands::snapshot(&ctx, *all_accounts),
         Command::Service => commands::service(&ctx),
         Command::Contact => commands::contact(&ctx),
+        Command::Open { account } => commands::open(&ctx, account),
         Command::Config(c) => commands::config_cmd(&ctx, c),
         Command::SelfUpdate(a) => selfupdate::run(a, cli.global.json, cli.global.quiet),
         Command::Completions { shell } => {

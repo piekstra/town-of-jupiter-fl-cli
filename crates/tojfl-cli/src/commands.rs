@@ -961,6 +961,29 @@ pub fn contact(ctx: &Ctx) -> Result<()> {
     Ok(())
 }
 
+// --- open -----------------------------------------------------------------
+
+pub fn open(ctx: &Ctx, account: &Option<String>) -> Result<()> {
+    let base = ctx
+        .cfg
+        .base_url
+        .clone()
+        .unwrap_or_else(|| tojfl_sdk::pages::BASE_URL.to_string());
+    let url = portal_login_url(&base);
+    let acct = account.clone().or_else(|| ctx.cfg.default_account.clone());
+    open_in_browser(&url)?;
+    match acct {
+        Some(a) => println!("Opened {url} — log in and select account {a}."),
+        None => println!("Opened {url} in your browser."),
+    }
+    Ok(())
+}
+
+/// The portal login URL for a base URL (trailing slash tolerant).
+fn portal_login_url(base: &str) -> String {
+    format!("{}{}", base.trim_end_matches('/'), tojfl_sdk::pages::LOGIN)
+}
+
 // --- config ---------------------------------------------------------------
 
 pub fn config_cmd(ctx: &Ctx, cmd: &ConfigCmd) -> Result<()> {
@@ -1172,8 +1195,20 @@ fn date_bound(value: &Option<String>, flag: &str) -> Result<Option<tojfl_sdk::da
 
 #[cfg(test)]
 mod tests {
-    use super::apply_config_key;
+    use super::{apply_config_key, portal_login_url};
     use tojfl_sdk::Config;
+
+    #[test]
+    fn portal_login_url_tolerates_trailing_slash() {
+        assert_eq!(
+            portal_login_url("https://x.example"),
+            "https://x.example/Login.aspx"
+        );
+        assert_eq!(
+            portal_login_url("https://x.example/"),
+            "https://x.example/Login.aspx"
+        );
+    }
 
     #[test]
     fn apply_config_key_sets_clears_and_validates() {

@@ -107,6 +107,7 @@ password from the keychain if present; pipe one explicitly with
 | `tojfl pay open  -c CUST -a ACCT [--open]` | Print / open the hosted payment page URL |
 | `tojfl service` | Service snapshot: last read date, last bill, last payment |
 | `tojfl contact` | Utility contact & service info (offline) |
+| `tojfl open [ACCT]` | Open the utility portal in your browser (log in there) |
 | `tojfl config path\|init\|show\|set\|unset\|set-password\|clear-password` | Manage local config & credentials (`config set account 000000`) |
 | `tojfl self-update [--check] [-y]` | Update the binary in place from the latest GitHub release |
 

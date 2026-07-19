@@ -126,6 +126,13 @@ pub enum Command {
     /// Show utility contact and service information.
     Contact,
 
+    /// Open the utility portal in your default browser.
+    Open {
+        /// Account to note in the hint (defaults to `--account` / config). The
+        /// portal requires you to log in and select it in the browser.
+        account: Option<String>,
+    },
+
     /// Manage local config and stored credentials.
     #[command(subcommand)]
     Config(ConfigCmd),
