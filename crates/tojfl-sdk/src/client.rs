@@ -140,10 +140,22 @@ impl Client {
         loop {
             attempt += 1;
             match make().send() {
-                Ok(resp) if is_transient_status(resp.status()) && attempt < MAX_ATTEMPTS => {
-                    std::thread::sleep(backoff_delay(attempt));
+                Ok(resp) => {
+                    if is_transient_status(resp.status()) && attempt < MAX_ATTEMPTS {
+                        std::thread::sleep(backoff_delay(attempt));
+                        continue;
+                    }
+                    // Retries exhausted on a transient status: surface it as an
+                    // error (→ Upstream/exit 5) rather than handing back the
+                    // error-page body as if it were the requested content.
+                    if is_transient_status(resp.status()) {
+                        return match resp.error_for_status() {
+                            Ok(ok) => Ok(ok),
+                            Err(e) => Err(Error::Http(e)),
+                        };
+                    }
+                    return Ok(resp);
                 }
-                Ok(resp) => return Ok(resp),
                 Err(e) if is_transient_error(&e) && attempt < MAX_ATTEMPTS => {
                     std::thread::sleep(backoff_delay(attempt));
                 }
