@@ -952,6 +952,9 @@ pub fn contact(ctx: &Ctx) -> Result<()> {
             &[
                 ("Department", c.department),
                 ("Phone", c.phone),
+                ("Email", c.email),
+                ("Hours", c.hours),
+                ("Address", c.address),
                 ("Portal", c.portal),
                 ("Utilities home", c.utilities_home),
                 ("Rates", c.rates_url),

@@ -496,6 +496,9 @@ pub struct PaymentQuote {
 pub struct Contact {
     pub department: String,
     pub phone: String,
+    pub email: String,
+    pub hours: String,
+    pub address: String,
     pub portal: String,
     pub utilities_home: String,
     pub rates_url: String,
@@ -507,6 +510,9 @@ impl Default for Contact {
         Contact {
             department: "Town of Jupiter Utilities".to_string(),
             phone: "(561) 741-2300".to_string(),
+            email: "winfo@jupiter.fl.us".to_string(),
+            hours: "Mon–Thu 7:30am–5:30pm, Fri 8:00am–5:00pm".to_string(),
+            address: "210 Military Trail, Jupiter, FL 33458".to_string(),
             portal: "https://utilitybill.jupiter.fl.us".to_string(),
             utilities_home: "https://www.jupiter.fl.us/water".to_string(),
             rates_url: "https://www.jupiter.fl.us/water".to_string(),
@@ -617,6 +623,14 @@ mod tests {
         assert_eq!(s.charges, Money::ZERO);
         assert_eq!(s.payments, Money::ZERO);
         assert_eq!(s.net, Money::ZERO);
+    }
+
+    #[test]
+    fn contact_default_carries_verified_details() {
+        let c = Contact::default();
+        assert_eq!(c.email, "winfo@jupiter.fl.us");
+        assert!(c.hours.contains("Mon") && c.hours.contains("Fri"));
+        assert!(c.address.contains("Military Trail") && c.address.contains("33458"));
     }
 
     #[test]
