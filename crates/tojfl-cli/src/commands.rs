@@ -4,6 +4,7 @@
 use crate::cli::*;
 use crate::output::{opt, Format};
 use anyhow::{anyhow, Context, Result};
+use pk_cli_utility::{Paged, Statement, UsagePeriod, UtilitySummary};
 use std::io::{IsTerminal, Read};
 use tojfl_sdk::{config, CompareTarget, Config, Portal};
 
@@ -26,6 +27,28 @@ impl Ctx {
             );
         }
         Ok(portal)
+    }
+}
+
+// --- utility/v1 profile mapping -------------------------------------------
+
+/// SDK cents → profile `Money` (string-decimal dollars, utility/v1).
+fn pk_money(m: tojfl_sdk::Money) -> pk_cli_core::Money {
+    let c = m.cents;
+    pk_cli_core::Money::usd(format!(
+        "{}{}.{:02}",
+        if c < 0 { "-" } else { "" },
+        (c / 100).abs(),
+        (c % 100).abs()
+    ))
+}
+
+/// Portal date text (`MM/DD/YYYY`, `Mon DD, YYYY`) → ISO `YYYY-MM-DD` per the
+/// profile contract; unrecognized text passes through verbatim.
+fn iso_date(s: &str) -> String {
+    match tojfl_sdk::date::parse(s) {
+        Some((y, m, d)) => format!("{y:04}-{m:02}-{d:02}"),
+        None => s.to_string(),
     }
 }
 
@@ -137,7 +160,8 @@ pub fn info(_ctx: &Ctx) -> Result<()> {
             "service",
             "contact",
         ],
-    );
+    )
+    .with_profiles(&[pk_cli_utility::PROFILE]);
     pk_cli_core::output::json(&serde_json::to_value(&info)?);
     Ok(())
 }
@@ -148,7 +172,20 @@ pub fn summary(ctx: &Ctx) -> Result<()> {
     let portal = ctx.portal()?;
     let s = portal.summary()?;
     if ctx.fmt.json {
-        ctx.fmt.print_json(&s)?;
+        // utility/v1: the canonical card DTO. The full provider payload
+        // stays available via `snapshot --json`.
+        let mut dto = UtilitySummary::new(pk_money(
+            s.account.balance.unwrap_or(tojfl_sdk::Money::ZERO),
+        ));
+        dto.due_date = s.account.due_date.as_deref().map(iso_date);
+        let acct = if s.account.account_number.is_empty() {
+            s.enrollment.account_number.clone()
+        } else {
+            Some(s.account.account_number.clone())
+        };
+        dto.account = acct.filter(|a| !a.is_empty());
+        dto.autopay = s.enrollment.autopay;
+        ctx.fmt.print_json(&dto)?;
     } else {
         let acct = if s.account.account_number.is_empty() {
             opt(&s.enrollment.account_number)
@@ -363,7 +400,10 @@ pub fn balance(ctx: &Ctx) -> Result<()> {
     let portal = ctx.portal()?;
     let bal = portal.balance()?;
     if ctx.fmt.json {
-        ctx.fmt.print_json(&serde_json::json!({ "balance": bal }))?;
+        // utility/v1: same DTO as `summary` — the profile's second entry
+        // point (no due date without the full summary fetch).
+        let dto = UtilitySummary::new(pk_money(bal.unwrap_or(tojfl_sdk::Money::ZERO)));
+        ctx.fmt.print_json(&dto)?;
     } else {
         match bal {
             Some(b) => println!("Balance due: {b}"),
@@ -383,24 +423,42 @@ pub fn bills(ctx: &Ctx, cmd: &BillsCmd) -> Result<()> {
         return bills_get(ctx, &portal, &items, args);
     }
 
-    let mut items = items;
+    // Keep each bill's 1-based position in the full history — that position
+    // is the id `bills get <N>` takes, so it must survive filtering.
+    let mut indexed: Vec<(usize, tojfl_sdk::Bill)> = items
+        .into_iter()
+        .enumerate()
+        .map(|(i, b)| (i + 1, b))
+        .collect();
     match cmd {
-        BillsCmd::Latest => items.truncate(1),
+        BillsCmd::Latest => indexed.truncate(1),
         BillsCmd::List {
             limit,
             since,
             until,
         } => {
             let (since, until) = date_bounds(since, until)?;
-            items.retain(|b| tojfl_sdk::date::in_range(&b.date, since, until));
+            indexed.retain(|(_, b)| tojfl_sdk::date::in_range(&b.date, since, until));
             if let Some(n) = limit {
-                items.truncate(*n);
+                indexed.truncate(*n);
             }
         }
         BillsCmd::Get(_) => unreachable!("handled above"),
     }
+    let items: Vec<tojfl_sdk::Bill> = indexed.iter().map(|(_, b)| b.clone()).collect();
     if ctx.fmt.json {
-        ctx.fmt.print_json(&items)?;
+        // utility/v1: statement-list/v1 envelope.
+        let statements: Vec<Statement> = indexed
+            .iter()
+            .map(|(pos, b)| Statement {
+                id: pos.to_string(),
+                date: Some(iso_date(&b.date)),
+                amount: pk_money(b.amount.unwrap_or(tojfl_sdk::Money::ZERO)),
+                due_date: b.due_date.as_deref().map(iso_date),
+                paid: None,
+            })
+            .collect();
+        ctx.fmt.print_json(&Paged::new("statement", statements))?;
     } else {
         let rows: Vec<Vec<String>> = items
             .iter()
@@ -523,7 +581,21 @@ pub fn usage(ctx: &Ctx, cmd: &UsageCmd) -> Result<()> {
                 items.truncate(*n);
             }
             if ctx.fmt.json {
-                ctx.fmt.print_json(&items)?;
+                // utility/v1: usage-period-list/v1 envelope. Rows without a
+                // parseable quantity are unusable for consumers and skipped
+                // (same rule the SDK's stats use).
+                let periods: Vec<UsagePeriod> = items
+                    .iter()
+                    .filter_map(|u| {
+                        Some(UsagePeriod {
+                            period: u.period.clone(),
+                            quantity: u.quantity?,
+                            unit: u.unit.clone().unwrap_or_default(),
+                            cost: None,
+                        })
+                    })
+                    .collect();
+                ctx.fmt.print_json(&Paged::new("usage-period", periods))?;
             } else {
                 let rows: Vec<Vec<String>> = items
                     .iter()
@@ -740,7 +812,20 @@ fn transactions_list(
         items.truncate(n);
     }
     if ctx.fmt.json {
-        ctx.fmt.print_json(&items)?;
+        // utility/v1: transaction-list/v1 envelope. Rows without an amount
+        // are skipped — the same rule `transactions summary` counts by.
+        let txns: Vec<pk_cli_utility::Transaction> = items
+            .iter()
+            .filter_map(|t| {
+                Some(pk_cli_utility::Transaction {
+                    date: iso_date(&t.date),
+                    amount: pk_money(t.amount?),
+                    description: Some(t.description.clone()),
+                    kind: None,
+                })
+            })
+            .collect();
+        ctx.fmt.print_json(&Paged::new("transaction", txns))?;
     } else {
         let rows: Vec<Vec<String>> = items
             .iter()
@@ -1274,8 +1359,30 @@ fn date_bound(value: &Option<String>, flag: &str) -> Result<Option<tojfl_sdk::da
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_config_key, derive_pay_numbers, portal_login_url};
-    use tojfl_sdk::{Account, Config};
+    use super::{apply_config_key, derive_pay_numbers, iso_date, pk_money, portal_login_url};
+    use tojfl_sdk::{Account, Config, Money};
+
+    #[test]
+    fn pk_money_renders_signed_decimal_strings() {
+        let s = |m: Money| pk_money(m).amount;
+        assert_eq!(s(Money::ZERO), "0.00");
+        assert_eq!(s(Money::from_cents(150)), "1.50");
+        assert_eq!(s(Money::from_cents(8421)), "84.21");
+        assert_eq!(s(Money::from_cents(5)), "0.05");
+        assert_eq!(s(Money::from_cents(-5)), "-0.05");
+        assert_eq!(s(Money::from_cents(-8421)), "-84.21");
+        assert_eq!(s(Money::from_cents(123400)), "1234.00");
+        assert_eq!(pk_money(Money::from_cents(150)).currency, "USD");
+    }
+
+    #[test]
+    fn iso_date_normalizes_portal_formats() {
+        assert_eq!(iso_date("07/18/2026"), "2026-07-18");
+        assert_eq!(iso_date("Jul 5, 2026"), "2026-07-05");
+        assert_eq!(iso_date("2026-07-18"), "2026-07-18");
+        // Unrecognized text passes through verbatim rather than being lost.
+        assert_eq!(iso_date("pending"), "pending");
+    }
 
     fn acct(cust: &str, num: &str) -> Account {
         Account {

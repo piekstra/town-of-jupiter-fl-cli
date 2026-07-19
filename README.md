@@ -20,6 +20,15 @@ $ tojfl usage compare --json | jq '.[0]'
 > public API; it authenticates and scrapes the portal on your behalf. Use it
 > with your own account and at your own discretion.
 
+Conforms to the [piekstra-cli spec v1](https://github.com/piekstra/cli-common)
+including the **`utility/v1` domain profile**: `summary`/`balance --json` emit
+the canonical `utility-summary/v1` DTO, and `bills`/`usage`/`transactions`
+lists emit schema-tagged `Paged` envelopes (records under `items`, `Money` as
+string-decimal dollars, ISO dates) — so drivers like
+[utiman](https://github.com/piekstra/utiman) need no per-provider field
+configuration. The full provider-shaped payload stays available via
+`snapshot --json`.
+
 ## Why this exists
 
 The portal is a [Harris **eCARE**](https://www.harriscomputer.com/) utility
