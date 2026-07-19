@@ -149,10 +149,8 @@ impl Client {
                     // error (→ Upstream/exit 5) rather than handing back the
                     // error-page body as if it were the requested content.
                     if is_transient_status(resp.status()) {
-                        return match resp.error_for_status() {
-                            Ok(ok) => Ok(ok),
-                            Err(e) => Err(Error::Http(e)),
-                        };
+                        // A transient status is always >= 400, so this errors.
+                        return resp.error_for_status().map_err(Error::Http);
                     }
                     return Ok(resp);
                 }
@@ -229,9 +227,40 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
-    use super::{backoff_delay, is_transient_status};
+    use super::{backoff_delay, is_transient_status, Client, Error, MAX_ATTEMPTS};
     use reqwest::StatusCode;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use std::time::Duration;
+
+    /// Spawn a throwaway HTTP server that replies to up to `max_conns`
+    /// connections with `status_line`, counting how many it received.
+    fn spawn_status_server(
+        status_line: &'static str,
+        max_conns: usize,
+    ) -> (String, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let count = Arc::new(AtomicUsize::new(0));
+        let seen = count.clone();
+        std::thread::spawn(move || {
+            for _ in 0..max_conns {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    break;
+                };
+                seen.fetch_add(1, Ordering::SeqCst);
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                let resp = format!(
+                    "HTTP/1.1 {status_line}\r\nContent-Length: 1\r\nConnection: close\r\n\r\nx"
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+        (format!("http://{addr}"), count)
+    }
 
     #[test]
     fn transient_statuses_are_retryable() {
@@ -257,5 +286,32 @@ mod tests {
         assert_eq!(backoff_delay(3), Duration::from_millis(800));
         // Capped exponent — never overflows for large attempt counts.
         assert!(backoff_delay(100) <= Duration::from_millis(200) * 32);
+    }
+
+    #[test]
+    fn transient_status_is_retried_then_errors() {
+        let (base, count) = spawn_status_server("503 Service Unavailable", MAX_ATTEMPTS as usize);
+        let client = Client::new(&base, Duration::from_secs(5)).unwrap();
+        let err = client.get("/").unwrap_err();
+        assert!(
+            matches!(err, Error::Http(_)),
+            "exhausted 503 → Http error, got {err:?}"
+        );
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            MAX_ATTEMPTS as usize,
+            "should try exactly MAX_ATTEMPTS times"
+        );
+    }
+
+    #[test]
+    fn non_transient_status_is_returned_without_retry() {
+        let (base, count) = spawn_status_server("404 Not Found", 1);
+        let client = Client::new(&base, Duration::from_secs(5)).unwrap();
+        let resp = client
+            .get("/")
+            .expect("404 is returned as Ok for callers to inspect");
+        assert_eq!(resp.status().as_u16(), 404);
+        assert_eq!(count.load(Ordering::SeqCst), 1, "404 must not be retried");
     }
 }
