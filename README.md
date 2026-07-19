@@ -226,12 +226,10 @@ degrees:
   `extra` map so nothing is dropped.
 - **Fully exercised against the live site (public paths):** the login-form
   contract and the one-time-payment lookup (`OnlinePayment.aspx`).
-- **Partial:** `profile` targets the correct page (`ChangeProfile.aspx`,
-  DNN's ManageUsers module) but its default view is the password/security form;
-  the name/email profile fields load behind a "Manage Profile" tab (a further
-  postback) that isn't wired up yet, so it can return empty. The parser
-  deliberately extracts only known profile properties — it never surfaces the
-  password or security-question fields on that page.
+- **`profile`** reads the DNN ManageUsers page (`ChangeProfile.aspx`) and returns
+  the account holder's name, username, and email. The parser deliberately
+  extracts only those known profile properties — it never surfaces the password
+  or security-question fields on that page.
 
 If a page's markup drifts, the parser degrades gracefully rather than crashing.
 

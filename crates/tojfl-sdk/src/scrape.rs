@@ -442,8 +442,23 @@ pub fn parse_profile(html: &str) -> Profile {
     Profile {
         first_name: value_by_id_suffixes(&doc, &["FirstName", "txtFirstName", "First_Name"]),
         last_name: value_by_id_suffixes(&doc, &["LastName", "txtLastName", "Last_Name"]),
-        email: value_by_id_suffixes(&doc, &["Email", "txtEmail", "Email_TextBox"]),
-        username: value_by_id_suffixes(&doc, &["Username", "txtUsername", "DisplayName"]),
+        // The live DNN ManageUsers email input id ends `email_email_TextBox`
+        // (lowercase) — the old case-sensitive `Email*` suffixes never matched.
+        email: value_by_id_suffixes(
+            &doc,
+            &["email_email_TextBox", "Email", "txtEmail", "Email_TextBox"],
+        ),
+        // Username is a read-only <span>; use the *value* span's id
+        // (`userNameReadOnly_userNameReadOnly_Label`), not the shorter
+        // `userNameReadOnly_Label` which is the "User Name:" caption.
+        username: value_by_id_suffixes(
+            &doc,
+            &[
+                "userNameReadOnly_userNameReadOnly_Label",
+                "Username",
+                "txtUsername",
+            ],
+        ),
         ..Default::default()
     }
 }
@@ -869,6 +884,34 @@ mod tests {
         );
         assert_eq!(s.last_payment_amount, Some(Money::from_cents(-8421)));
         assert_eq!(s.last_payment_date.as_deref(), Some("Jun 15, 2026"));
+    }
+
+    #[test]
+    fn parses_profile_email_username_not_password_or_caption() {
+        // Mirrors the live DNN ManageUsers id shapes (volatile ctr prefix).
+        let html = r#"
+            <input id="dnn_ctr396_ManageUsers_Profile_ProfileProperties_FirstName_FirstName" value="Jane" />
+            <input id="dnn_ctr396_ManageUsers_Profile_ProfileProperties_LastName_LastName" value="Doe" />
+            <input id="dnn_ctr396_ManageUsers_User_userForm_email_email_TextBox" value="jane@example.com" />
+            <span id="dnn_ctr396_ManageUsers_User_userForm_userNameReadOnly_Label">User Name:</span>
+            <span id="dnn_ctr396_ManageUsers_User_userForm_userNameReadOnly_userNameReadOnly_Label">jdoe</span>
+            <input id="dnn_ctr396_ManageUsers_Password_txtNewPassword" type="password" value="SECRET" />
+        "#;
+        let p = parse_profile(html);
+        assert_eq!(p.first_name.as_deref(), Some("Jane"));
+        assert_eq!(p.last_name.as_deref(), Some("Doe"));
+        assert_eq!(p.email.as_deref(), Some("jane@example.com"));
+        assert_eq!(
+            p.username.as_deref(),
+            Some("jdoe"),
+            "value span, not the caption"
+        );
+        // The password value must never appear in any parsed field.
+        let joined = format!("{p:?}");
+        assert!(
+            !joined.contains("SECRET"),
+            "password must not leak into profile"
+        );
     }
 
     #[test]

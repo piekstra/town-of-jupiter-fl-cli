@@ -109,11 +109,13 @@ Meter #, Previous Read, Current Read, # of Days, Type of Reading, Consumption,
 Average. Scraped by `parse_meter_reads`; exposed as `tojfl meters`.
 
 Profile: the "Change Profile" menu link points to **`ChangeProfile.aspx`** (DNN
-`ManageUsers`), NOT `UserProfile.aspx` (which is a message inbox). Its default
-view is the password/security form; the name/email profile properties load
-behind a "Manage Profile" tab (a further postback) — not yet wired up. The
-parser extracts only recognized profile properties, never the password/security
-fields.
+`ManageUsers`), NOT `UserProfile.aspx` (which is a message inbox).
+`ChangeProfile.aspx` 302-redirects to the friendly URL and returns the full
+ManageUsers page with every field present (no tab postback needed). The parser
+matches by id **suffix**: name from `…FirstName_FirstName`/`…LastName_LastName`,
+email from `…email_email_TextBox`, and the username from the value span
+`…userNameReadOnly_userNameReadOnly_Label` (not the shorter `…_Label` caption).
+It extracts only those recognized properties, never the password/security fields.
 
 ## Scraping strategy
 
