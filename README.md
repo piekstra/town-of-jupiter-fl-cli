@@ -107,7 +107,7 @@ password from the keychain if present; pipe one explicitly with
 | `tojfl pay open  -c CUST -a ACCT [--open]` | Print / open the hosted payment page URL |
 | `tojfl service` | Service snapshot: last read date, last bill, last payment |
 | `tojfl contact` | Utility contact & service info (offline) |
-| `tojfl config path\|init\|show\|set-password\|clear-password` | Manage local config & credentials |
+| `tojfl config path\|init\|show\|set\|unset\|set-password\|clear-password` | Manage local config & credentials (`config set account 000000`) |
 | `tojfl self-update [--check] [-y]` | Update the binary in place from the latest GitHub release |
 
 Add `--json` to any command for machine-readable output, or `--csv` for a
@@ -139,7 +139,7 @@ tojfl --account 000000 bills list      # statements for account 000000
 tojfl --account 000000 usage list
 ```
 
-Set `default_account` in your config to avoid repeating `--account`.
+Run `tojfl config set account <ACCOUNT#>` to avoid repeating `--account`.
 
 ### Paying a bill
 

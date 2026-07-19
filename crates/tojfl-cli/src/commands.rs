@@ -1001,6 +1001,8 @@ pub fn config_cmd(ctx: &Ctx, cmd: &ConfigCmd) -> Result<()> {
             }
             Ok(())
         }
+        ConfigCmd::Set { key, value } => config_set(key, Some(value)),
+        ConfigCmd::Unset { key } => config_set(key, None),
         ConfigCmd::SetPassword => {
             let pw = prompt_password("Portal password: ")?;
             config::keychain_set(&pw)?;
@@ -1013,6 +1015,64 @@ pub fn config_cmd(ctx: &Ctx, cmd: &ConfigCmd) -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// Set (or, with `value: None`, clear) a config key and persist the file.
+/// Loads the on-disk config so transient CLI overrides aren't written back.
+fn config_set(key: &str, value: Option<&str>) -> Result<()> {
+    let mut cfg = Config::load()?;
+    apply_config_key(&mut cfg, key, value)?;
+    let path = cfg.save()?;
+    let verb = if value.is_some() { "Set" } else { "Cleared" };
+    println!("✓ {verb} {key} in {}", path.display());
+    Ok(())
+}
+
+/// Apply a single key/value to a [`Config`] in memory, validating the key and
+/// value. Kept pure (no IO) so it's unit-testable. Password is intentionally not
+/// settable here — use `config set-password` (it belongs in the keychain).
+fn apply_config_key(cfg: &mut Config, key: &str, value: Option<&str>) -> Result<()> {
+    let usage = |m: String| -> anyhow::Error { tojfl_sdk::Error::Invalid(m).into() };
+    match key {
+        // `account` is the piekstra-cli/1 spec key (DESIGN.md §1.2); accept the
+        // `default_account` field name as an alias.
+        "account" | "default_account" => cfg.default_account = value.map(String::from),
+        "username" => cfg.username = value.map(String::from),
+        "base_url" => cfg.base_url = value.map(String::from),
+        "output" => {
+            if let Some(v) = value {
+                if !matches!(v, "table" | "json" | "csv") {
+                    return Err(usage(format!("output must be table|json|csv, got '{v}'")));
+                }
+            }
+            cfg.output = value.map(String::from);
+        }
+        "timeout_secs" => {
+            cfg.timeout_secs = match value {
+                Some(v) => Some(
+                    v.parse()
+                        .map_err(|_| usage(format!("timeout_secs must be a number, got '{v}'")))?,
+                ),
+                None => None,
+            };
+        }
+        "auto_login" => {
+            cfg.auto_login = match value {
+                Some(v) => Some(
+                    v.parse()
+                        .map_err(|_| usage(format!("auto_login must be true|false, got '{v}'")))?,
+                ),
+                None => None,
+            };
+        }
+        other => {
+            return Err(usage(format!(
+                "unknown config key '{other}' (settable: account, username, base_url, \
+                 output, timeout_secs, auto_login)"
+            )));
+        }
+    }
+    Ok(())
 }
 
 // --- helpers --------------------------------------------------------------
@@ -1107,5 +1167,38 @@ fn date_bound(value: &Option<String>, flag: &str) -> Result<Option<tojfl_sdk::da
             ))
             .into()
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_config_key;
+    use tojfl_sdk::Config;
+
+    #[test]
+    fn apply_config_key_sets_clears_and_validates() {
+        let mut cfg = Config::default();
+
+        // Spec key `account` and the `default_account` alias both set the field.
+        apply_config_key(&mut cfg, "account", Some("000000")).unwrap();
+        assert_eq!(cfg.default_account.as_deref(), Some("000000"));
+        apply_config_key(&mut cfg, "default_account", None).unwrap();
+        assert_eq!(cfg.default_account, None);
+
+        apply_config_key(&mut cfg, "output", Some("csv")).unwrap();
+        assert_eq!(cfg.output.as_deref(), Some("csv"));
+        assert!(apply_config_key(&mut cfg, "output", Some("xml")).is_err());
+
+        apply_config_key(&mut cfg, "timeout_secs", Some("45")).unwrap();
+        assert_eq!(cfg.timeout_secs, Some(45));
+        assert!(apply_config_key(&mut cfg, "timeout_secs", Some("soon")).is_err());
+
+        apply_config_key(&mut cfg, "auto_login", Some("false")).unwrap();
+        assert_eq!(cfg.auto_login, Some(false));
+        assert!(apply_config_key(&mut cfg, "auto_login", Some("maybe")).is_err());
+
+        // Unknown key is a usage error.
+        assert!(apply_config_key(&mut cfg, "password", Some("x")).is_err());
+        assert!(apply_config_key(&mut cfg, "nope", Some("x")).is_err());
     }
 }
