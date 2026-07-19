@@ -155,6 +155,23 @@ tojfl pay open  -c 0000000 -a 000000 --open # open the secure payment page
 This tool **never handles card data.** It stops at the hosted processor page,
 by design — see below.
 
+## Exit codes
+
+Commands follow the shared CLI-family exit-code contract, so scripts and
+dashboards can branch on failure kind:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success |
+| `1` | Unexpected/other error (incl. keychain access) |
+| `2` | Usage error (bad flags/arguments/input) |
+| `3` | Authentication required or session invalid/expired |
+| `4` | Not found (unknown account, no statement at that position) |
+| `5` | Upstream/portal error (network, TLS, unparseable page) |
+| `6` | Confirmation required |
+
+With `--json`, failures also print a machine-readable error object to stdout.
+
 ## Updating
 
 ```bash

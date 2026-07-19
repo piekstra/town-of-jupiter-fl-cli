@@ -52,6 +52,10 @@ pub enum Error {
     /// A value the caller supplied was invalid before we ever hit the network.
     #[error("invalid input: {0}")]
     Invalid(String),
+
+    /// A requested resource doesn't exist (unknown account, missing statement).
+    #[error("not found: {0}")]
+    NotFound(String),
 }
 
 impl Error {

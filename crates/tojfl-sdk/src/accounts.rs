@@ -150,7 +150,7 @@ fn parse_dopostback(href: &str) -> Option<(String, String)> {
 
 /// Turn a "not linked" `select` result into an error listing valid accounts.
 pub(crate) fn not_linked(account: &str, available: &[String]) -> Error {
-    Error::Invalid(format!(
+    Error::NotFound(format!(
         "account {account} is not linked to this login (linked: {})",
         if available.is_empty() {
             "none found".to_string()
