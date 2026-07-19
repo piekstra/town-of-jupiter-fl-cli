@@ -981,7 +981,7 @@ pub fn open(ctx: &Ctx, account: &Option<String>) -> Result<()> {
 
 /// The portal login URL for a base URL (trailing slash tolerant).
 fn portal_login_url(base: &str) -> String {
-    format!("{}/Login.aspx", base.trim_end_matches('/'))
+    format!("{}{}", base.trim_end_matches('/'), tojfl_sdk::pages::LOGIN)
 }
 
 // --- config ---------------------------------------------------------------
