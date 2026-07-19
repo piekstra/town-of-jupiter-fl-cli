@@ -52,6 +52,7 @@ fn to_cli_error(err: &anyhow::Error) -> pk_cli_core::CliError {
         Some(E::Portal(m)) | Some(E::Parse(m)) => CliError::Upstream(m.clone()),
         Some(E::MissingFormField(m)) => CliError::Upstream(m.clone()),
         Some(E::Invalid(m)) | Some(E::Config(m)) => CliError::Usage(m.clone()),
+        Some(E::NotFound(m)) => CliError::NotFound(m.clone()),
         Some(E::Keychain(m)) => CliError::Keychain(m.clone()),
         _ => CliError::Other(format!("{err:#}")),
     }
@@ -121,5 +122,26 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             Ok(())
         }
         Command::Info => commands::info(&ctx),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::to_cli_error;
+    use tojfl_sdk::Error as E;
+
+    fn code(e: E) -> i32 {
+        to_cli_error(&anyhow::Error::from(e)).exit_code()
+    }
+
+    #[test]
+    fn sdk_errors_map_to_family_exit_codes() {
+        assert_eq!(code(E::NotFound("no account".into())), 4);
+        assert_eq!(code(E::NotAuthenticated), 3);
+        assert_eq!(code(E::Auth("bad creds".into())), 3);
+        assert_eq!(code(E::Invalid("bad flag".into())), 2);
+        assert_eq!(code(E::Config("bad file".into())), 2);
+        assert_eq!(code(E::Portal("rejected".into())), 5);
+        assert_eq!(code(E::Keychain("locked".into())), 1);
     }
 }

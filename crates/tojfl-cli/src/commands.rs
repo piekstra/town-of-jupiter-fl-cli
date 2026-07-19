@@ -444,11 +444,12 @@ fn bills_get(
         ));
     }
     if args.index == 0 || args.index > items.len() {
-        return Err(anyhow!(
+        return Err(tojfl_sdk::Error::NotFound(format!(
             "no statement at position {} — the billing history has {} statement(s)",
             args.index,
             items.len()
-        ));
+        ))
+        .into());
     }
     let bill = &items[args.index - 1];
     let pdf = portal
