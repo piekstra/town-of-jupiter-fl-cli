@@ -496,7 +496,9 @@ pub fn bills(ctx: &Ctx, cmd: &BillsCmd) -> Result<()> {
 /// `documents download 2026-03-15` fetches that statement — the same PDF
 /// `bills get <N>` produces. Reuses `portal.bills()` / `portal.download_bill`.
 pub fn documents(ctx: &Ctx, cmd: &DocumentsCmd) -> Result<()> {
-    use pk_cli_documents::{Document, Paged};
+    // Alias so the documents/v1 envelope is never confused with the utility/v1
+    // `Paged` imported at module scope.
+    use pk_cli_documents::{Document, Paged as DocumentPaged};
     let portal = ctx.portal()?;
     let bills = portal.bills()?;
     match cmd {
@@ -516,7 +518,7 @@ pub fn documents(ctx: &Ctx, cmd: &DocumentsCmd) -> Result<()> {
                 docs.truncate(*n);
             }
             if ctx.fmt.json {
-                ctx.fmt.print_json(&Paged::new("document", docs))?;
+                ctx.fmt.print_json(&DocumentPaged::new("document", docs))?;
             } else {
                 let rows: Vec<Vec<String>> = docs
                     .iter()
@@ -564,20 +566,7 @@ fn documents_download_one(
             "--json and `-o -` are mutually exclusive: a binary PDF can't be JSON-encoded"
         ));
     }
-    let bill = match args.id.as_deref() {
-        Some(id) => bills
-            .iter()
-            .find(|b| b.document_url.is_some() && iso_date(&b.date) == id)
-            .ok_or_else(|| {
-                tojfl_sdk::Error::NotFound(format!(
-                    "no downloadable statement dated {id} — see `tojfl documents list`"
-                ))
-            })?,
-        None => bills
-            .iter()
-            .find(|b| b.document_url.is_some())
-            .ok_or_else(|| tojfl_sdk::Error::NotFound("no downloadable statements found".into()))?,
-    };
+    let bill = find_statement(bills, args.id.as_deref())?;
     let pdf = portal
         .download_bill(bill)
         .context("downloading statement PDF")?;
@@ -591,7 +580,7 @@ fn documents_download_one(
     }
     let path = resolve_doc_path(args.output.as_deref(), &iso);
     std::fs::write(&path, &pdf).with_context(|| format!("writing {path}"))?;
-    let saved = saved_doc(&iso, &path, pdf.len());
+    let saved = saved_doc(bill, &path, pdf.len());
     if ctx.fmt.json {
         ctx.fmt.print_json(&saved)?;
     } else {
@@ -629,7 +618,7 @@ fn documents_download_all(
             .download_bill(b)
             .context("downloading statement PDF")?;
         std::fs::write(&path, &pdf).with_context(|| format!("writing {path}"))?;
-        saved.push(saved_doc(&iso, &path, pdf.len()));
+        saved.push(saved_doc(b, &path, pdf.len()));
     }
     let where_to = if dir.is_empty() { ".".to_string() } else { dir };
     let batch = pk_cli_documents::DownloadBatch::new(where_to, saved);
@@ -659,14 +648,36 @@ fn resolve_doc_path(output: Option<&str>, iso: &str) -> String {
     }
 }
 
-fn saved_doc(iso: &str, path: &str, bytes: usize) -> pk_cli_documents::SavedDocument {
-    let mut doc = pk_cli_documents::Document::new(
-        iso.to_string(),
-        format!("Town of Jupiter statement {iso}"),
-    );
-    doc.date = Some(iso.to_string());
-    doc.category = Some("statement".into());
-    pk_cli_documents::SavedDocument::from_document(&doc, path.to_string(), bytes as u64)
+/// Find the statement to download: the downloadable bill whose ISO date matches
+/// `id`, or (with no id) the most recent downloadable one — mirroring
+/// `bills get`'s default-to-latest.
+fn find_statement<'a>(
+    bills: &'a [tojfl_sdk::Bill],
+    id: Option<&str>,
+) -> Result<&'a tojfl_sdk::Bill> {
+    match id {
+        Some(id) => bills
+            .iter()
+            .find(|b| b.document_url.is_some() && iso_date(&b.date) == id)
+            .ok_or_else(|| {
+                tojfl_sdk::Error::NotFound(format!(
+                    "no downloadable statement dated {id} — see `tojfl documents list`"
+                ))
+                .into()
+            }),
+        None => bills
+            .iter()
+            .find(|b| b.document_url.is_some())
+            .ok_or_else(|| {
+                tojfl_sdk::Error::NotFound("no downloadable statements found".into()).into()
+            }),
+    }
+}
+
+/// The download result, built from the same [`document_of`] mapping the list
+/// path uses, so `documents list` and `documents download --json` never diverge.
+fn saved_doc(b: &tojfl_sdk::Bill, path: &str, bytes: usize) -> pk_cli_documents::SavedDocument {
+    pk_cli_documents::SavedDocument::from_document(&document_of(b), path.to_string(), bytes as u64)
 }
 
 fn bills_get(
@@ -1541,8 +1552,54 @@ fn date_bound(value: &Option<String>, flag: &str) -> Result<Option<tojfl_sdk::da
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_config_key, derive_pay_numbers, document_of, iso_date, pk_money, portal_login_url,
+        apply_config_key, derive_pay_numbers, document_of, find_statement, iso_date, pk_money,
+        portal_login_url, resolve_doc_path,
     };
+
+    fn bill(date: &str, url: Option<&str>) -> tojfl_sdk::Bill {
+        tojfl_sdk::Bill {
+            date: date.into(),
+            amount: None,
+            current_charges: None,
+            balance_forward: None,
+            due_date: None,
+            document_id: None,
+            document_url: url.map(String::from),
+            extra: Default::default(),
+        }
+    }
+
+    #[test]
+    fn find_statement_matches_iso_id_and_defaults_to_latest() {
+        let bills = vec![
+            bill("07/18/2026", Some("u2")), // newest downloadable
+            bill("06/15/2026", None),       // listed but not downloadable
+            bill("05/28/2026", Some("u1")),
+        ];
+        // By id (the ISO bill date).
+        assert_eq!(
+            find_statement(&bills, Some("2026-05-28")).unwrap().date,
+            "05/28/2026"
+        );
+        // No id → the most recent *downloadable* statement.
+        assert_eq!(find_statement(&bills, None).unwrap().date, "07/18/2026");
+        // An unknown id, or a non-downloadable date, is a not-found error.
+        assert!(find_statement(&bills, Some("2026-01-01")).is_err());
+        assert!(find_statement(&bills, Some("2026-06-15")).is_err());
+    }
+
+    #[test]
+    fn resolve_doc_path_covers_file_dir_and_default() {
+        assert_eq!(resolve_doc_path(None, "2026-03-15"), "bill-2026-03-15.pdf");
+        assert_eq!(
+            resolve_doc_path(Some("/tmp/x.pdf"), "2026-03-15"),
+            "/tmp/x.pdf"
+        );
+        let dir = std::env::temp_dir();
+        let got = resolve_doc_path(Some(dir.to_str().unwrap()), "2026-03-15");
+        assert!(got.ends_with("bill-2026-03-15.pdf"), "got {got}");
+        assert!(got.contains(dir.to_str().unwrap()), "got {got}");
+    }
     use tojfl_sdk::{Account, Config, Money};
 
     #[test]

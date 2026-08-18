@@ -235,15 +235,16 @@ pub enum DocumentsCmd {
         #[arg(long, value_name = "DATE")]
         until: Option<String>,
     },
-    /// Download a statement PDF by id (its bill date), or every one with --all.
+    /// Download a statement PDF by id (its bill date; omit for the most recent),
+    /// or every one with `--all`.
     #[command(alias = "get")]
     Download(DocumentsDownloadArgs),
 }
 
 #[derive(Debug, Args)]
 pub struct DocumentsDownloadArgs {
-    /// Document id from `documents list` — the bill date (YYYY-MM-DD). Omit and
-    /// pass `--all` for every statement.
+    /// Document id from `documents list` — the bill date (YYYY-MM-DD). Omit for
+    /// the most recent statement, or pass `--all` for every one.
     pub id: Option<String>,
     /// Download every statement (write to a directory with `-o`).
     #[arg(long, conflicts_with = "id")]
