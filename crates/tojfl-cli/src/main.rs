@@ -100,6 +100,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Account(c) => commands::account(&ctx, c),
         Command::Balance => commands::balance(&ctx),
         Command::Bills(c) => commands::bills(&ctx, c),
+        Command::Documents(c) => commands::documents(&ctx, c),
         Command::Usage(c) => commands::usage(&ctx, c),
         Command::Meters {
             limit,

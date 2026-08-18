@@ -151,6 +151,7 @@ pub fn info(_ctx: &Ctx) -> Result<()> {
             "account",
             "balance",
             "bills",
+            "documents",
             "usage",
             "meters",
             "transactions",
@@ -161,7 +162,7 @@ pub fn info(_ctx: &Ctx) -> Result<()> {
             "contact",
         ],
     )
-    .with_profiles(&[pk_cli_utility::PROFILE]);
+    .with_profiles(&[pk_cli_utility::PROFILE, pk_cli_documents::PROFILE]);
     pk_cli_core::output::json(&serde_json::to_value(&info)?);
     Ok(())
 }
@@ -486,6 +487,197 @@ pub fn bills(ctx: &Ctx, cmd: &BillsCmd) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// `tojfl documents` — statement PDFs as the documents/v1 profile.
+///
+/// Town of Jupiter statements are the downloadable bill PDFs; only bills with a
+/// `document_url` are fetchable. A document's id is its ISO bill date, so
+/// `documents download 2026-03-15` fetches that statement — the same PDF
+/// `bills get <N>` produces. Reuses `portal.bills()` / `portal.download_bill`.
+pub fn documents(ctx: &Ctx, cmd: &DocumentsCmd) -> Result<()> {
+    // Alias so the documents/v1 envelope is never confused with the utility/v1
+    // `Paged` imported at module scope.
+    use pk_cli_documents::{Document, Paged as DocumentPaged};
+    let portal = ctx.portal()?;
+    let bills = portal.bills()?;
+    match cmd {
+        DocumentsCmd::List {
+            limit,
+            since,
+            until,
+        } => {
+            let (since, until) = date_bounds(since, until)?;
+            let mut docs: Vec<Document> = bills
+                .iter()
+                .filter(|b| b.document_url.is_some())
+                .filter(|b| tojfl_sdk::date::in_range(&b.date, since, until))
+                .map(document_of)
+                .collect();
+            if let Some(n) = limit {
+                docs.truncate(*n);
+            }
+            if ctx.fmt.json {
+                ctx.fmt.print_json(&DocumentPaged::new("document", docs))?;
+            } else {
+                let rows: Vec<Vec<String>> = docs
+                    .iter()
+                    .map(|d| {
+                        vec![
+                            d.date.clone().unwrap_or_default(),
+                            d.name.clone(),
+                            d.id.clone(),
+                        ]
+                    })
+                    .collect();
+                ctx.fmt.print_table(&["DATE", "NAME", "ID"], &rows);
+            }
+            Ok(())
+        }
+        DocumentsCmd::Download(args) => {
+            if args.all {
+                documents_download_all(ctx, &portal, &bills, args)
+            } else {
+                documents_download_one(ctx, &portal, &bills, args)
+            }
+        }
+    }
+}
+
+/// One downloadable bill → a documents/v1 [`Document`] (id = ISO bill date; no
+/// financial fields — an `amount` is the utility/v1 statement's concern).
+fn document_of(b: &tojfl_sdk::Bill) -> pk_cli_documents::Document {
+    let date = iso_date(&b.date);
+    let mut d =
+        pk_cli_documents::Document::new(date.clone(), format!("Town of Jupiter statement {date}"));
+    d.date = Some(date);
+    d.category = Some("statement".into());
+    d
+}
+
+fn documents_download_one(
+    ctx: &Ctx,
+    portal: &Portal,
+    bills: &[tojfl_sdk::Bill],
+    args: &DocumentsDownloadArgs,
+) -> Result<()> {
+    if ctx.fmt.json && args.output.as_deref() == Some("-") {
+        return Err(anyhow!(
+            "--json and `-o -` are mutually exclusive: a binary PDF can't be JSON-encoded"
+        ));
+    }
+    let bill = find_statement(bills, args.id.as_deref())?;
+    let pdf = portal
+        .download_bill(bill)
+        .context("downloading statement PDF")?;
+    let iso = iso_date(&bill.date);
+
+    if args.output.as_deref() == Some("-") {
+        use std::io::Write;
+        return std::io::stdout()
+            .write_all(&pdf)
+            .context("writing PDF to stdout");
+    }
+    let path = resolve_doc_path(args.output.as_deref(), &iso);
+    std::fs::write(&path, &pdf).with_context(|| format!("writing {path}"))?;
+    let saved = saved_doc(bill, &path, pdf.len());
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&saved)?;
+    } else {
+        println!("{path}");
+        eprintln!("saved statement {iso} ({} KB) to {path}", pdf.len() / 1024);
+    }
+    Ok(())
+}
+
+fn documents_download_all(
+    ctx: &Ctx,
+    portal: &Portal,
+    bills: &[tojfl_sdk::Bill],
+    args: &DocumentsDownloadArgs,
+) -> Result<()> {
+    if args.output.as_deref() == Some("-") {
+        return Err(anyhow!(
+            "--all can't stream to stdout; give a directory with -o, or omit it"
+        ));
+    }
+    let dir = args.output.clone().unwrap_or_default();
+    if !dir.is_empty() && !std::path::Path::new(&dir).exists() {
+        std::fs::create_dir_all(&dir).with_context(|| format!("creating {dir}"))?;
+    }
+    let mut saved = Vec::new();
+    for b in bills.iter().filter(|b| b.document_url.is_some()) {
+        let iso = iso_date(&b.date);
+        let name = format!("bill-{iso}.pdf");
+        let path = if dir.is_empty() {
+            name
+        } else {
+            std::path::Path::new(&dir).join(&name).display().to_string()
+        };
+        let pdf = portal
+            .download_bill(b)
+            .context("downloading statement PDF")?;
+        std::fs::write(&path, &pdf).with_context(|| format!("writing {path}"))?;
+        saved.push(saved_doc(b, &path, pdf.len()));
+    }
+    let where_to = if dir.is_empty() { ".".to_string() } else { dir };
+    let batch = pk_cli_documents::DownloadBatch::new(where_to, saved);
+    if ctx.fmt.json {
+        ctx.fmt.print_json(&batch)?;
+    } else {
+        for it in &batch.items {
+            println!("{}", it.path);
+        }
+        eprintln!(
+            "saved {} statement(s), {} bytes → {}",
+            batch.count, batch.bytes_total, batch.dir
+        );
+    }
+    Ok(())
+}
+
+fn resolve_doc_path(output: Option<&str>, iso: &str) -> String {
+    let default_name = format!("bill-{iso}.pdf");
+    match output {
+        None => default_name,
+        Some(o) if std::path::Path::new(o).is_dir() => std::path::Path::new(o)
+            .join(&default_name)
+            .display()
+            .to_string(),
+        Some(o) => o.to_string(),
+    }
+}
+
+/// Find the statement to download: the downloadable bill whose ISO date matches
+/// `id`, or (with no id) the most recent downloadable one — mirroring
+/// `bills get`'s default-to-latest.
+fn find_statement<'a>(
+    bills: &'a [tojfl_sdk::Bill],
+    id: Option<&str>,
+) -> Result<&'a tojfl_sdk::Bill> {
+    match id {
+        Some(id) => bills
+            .iter()
+            .find(|b| b.document_url.is_some() && iso_date(&b.date) == id)
+            .ok_or_else(|| {
+                tojfl_sdk::Error::NotFound(format!(
+                    "no downloadable statement dated {id} — see `tojfl documents list`"
+                ))
+                .into()
+            }),
+        None => bills
+            .iter()
+            .find(|b| b.document_url.is_some())
+            .ok_or_else(|| {
+                tojfl_sdk::Error::NotFound("no downloadable statements found".into()).into()
+            }),
+    }
+}
+
+/// The download result, built from the same [`document_of`] mapping the list
+/// path uses, so `documents list` and `documents download --json` never diverge.
+fn saved_doc(b: &tojfl_sdk::Bill, path: &str, bytes: usize) -> pk_cli_documents::SavedDocument {
+    pk_cli_documents::SavedDocument::from_document(&document_of(b), path.to_string(), bytes as u64)
 }
 
 fn bills_get(
@@ -1359,7 +1551,55 @@ fn date_bound(value: &Option<String>, flag: &str) -> Result<Option<tojfl_sdk::da
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_config_key, derive_pay_numbers, iso_date, pk_money, portal_login_url};
+    use super::{
+        apply_config_key, derive_pay_numbers, document_of, find_statement, iso_date, pk_money,
+        portal_login_url, resolve_doc_path,
+    };
+
+    fn bill(date: &str, url: Option<&str>) -> tojfl_sdk::Bill {
+        tojfl_sdk::Bill {
+            date: date.into(),
+            amount: None,
+            current_charges: None,
+            balance_forward: None,
+            due_date: None,
+            document_id: None,
+            document_url: url.map(String::from),
+            extra: Default::default(),
+        }
+    }
+
+    #[test]
+    fn find_statement_matches_iso_id_and_defaults_to_latest() {
+        let bills = vec![
+            bill("07/18/2026", Some("u2")), // newest downloadable
+            bill("06/15/2026", None),       // listed but not downloadable
+            bill("05/28/2026", Some("u1")),
+        ];
+        // By id (the ISO bill date).
+        assert_eq!(
+            find_statement(&bills, Some("2026-05-28")).unwrap().date,
+            "05/28/2026"
+        );
+        // No id → the most recent *downloadable* statement.
+        assert_eq!(find_statement(&bills, None).unwrap().date, "07/18/2026");
+        // An unknown id, or a non-downloadable date, is a not-found error.
+        assert!(find_statement(&bills, Some("2026-01-01")).is_err());
+        assert!(find_statement(&bills, Some("2026-06-15")).is_err());
+    }
+
+    #[test]
+    fn resolve_doc_path_covers_file_dir_and_default() {
+        assert_eq!(resolve_doc_path(None, "2026-03-15"), "bill-2026-03-15.pdf");
+        assert_eq!(
+            resolve_doc_path(Some("/tmp/x.pdf"), "2026-03-15"),
+            "/tmp/x.pdf"
+        );
+        let dir = std::env::temp_dir();
+        let got = resolve_doc_path(Some(dir.to_str().unwrap()), "2026-03-15");
+        assert!(got.ends_with("bill-2026-03-15.pdf"), "got {got}");
+        assert!(got.contains(dir.to_str().unwrap()), "got {got}");
+    }
     use tojfl_sdk::{Account, Config, Money};
 
     #[test]
@@ -1382,6 +1622,33 @@ mod tests {
         assert_eq!(iso_date("2026-07-18"), "2026-07-18");
         // Unrecognized text passes through verbatim rather than being lost.
         assert_eq!(iso_date("pending"), "pending");
+    }
+
+    #[test]
+    fn document_of_conforms_to_documents_v1() {
+        // A downloadable bill maps to a documents/v1 Document: id = ISO bill
+        // date, category "statement", no financial fields. The value also
+        // round-trips into the shared pk_cli_documents::Document type.
+        let b = tojfl_sdk::Bill {
+            date: "03/15/2026".into(),
+            amount: Some(tojfl_sdk::Money { cents: 4210 }),
+            current_charges: None,
+            balance_forward: None,
+            due_date: None,
+            document_id: Some("doc-1".into()),
+            document_url: Some("https://portal/doc-1.pdf".into()),
+            extra: Default::default(),
+        };
+        let v = serde_json::to_value(document_of(&b)).unwrap();
+        assert_eq!(v["id"], "2026-03-15");
+        assert_eq!(v["date"], "2026-03-15");
+        assert_eq!(v["category"], "statement");
+        assert!(
+            v.get("amount").is_none(),
+            "no financial fields on a document"
+        );
+        let doc: pk_cli_documents::Document = serde_json::from_value(v).unwrap();
+        assert_eq!(doc.name, "Town of Jupiter statement 2026-03-15");
     }
 
     fn acct(cust: &str, num: &str) -> Account {
