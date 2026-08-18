@@ -25,3 +25,4 @@ pk-cli-core.workspace = true
 pk-cli-selfupdate.workspace = true
 pk-cli-auth.workspace = true
 pk-cli-utility.workspace = true
+pk-cli-documents.workspace = true

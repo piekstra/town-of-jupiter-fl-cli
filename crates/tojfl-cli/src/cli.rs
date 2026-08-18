@@ -87,6 +87,10 @@ pub enum Command {
     #[command(subcommand)]
     Bills(BillsCmd),
 
+    /// Statement documents: list and download bill PDFs (documents/v1 profile).
+    #[command(subcommand)]
+    Documents(DocumentsCmd),
+
     /// Metered water usage / consumption history.
     #[command(subcommand)]
     Usage(UsageCmd),
@@ -209,6 +213,43 @@ pub struct BillsGetArgs {
     #[arg(value_name = "N", default_value = "1")]
     pub index: usize,
     /// Where to write the PDF (default: ./bill-<date>.pdf; use `-` for stdout).
+    #[arg(short, long, value_name = "PATH")]
+    pub output: Option<String>,
+}
+
+/// Statement documents (documents/v1). Town of Jupiter statements are the
+/// downloadable bill PDFs; a document's id is its ISO bill date, so
+/// `documents download 2026-03-15` fetches that statement.
+#[derive(Debug, Subcommand)]
+pub enum DocumentsCmd {
+    /// List downloadable statement documents, newest first (document-list/v1).
+    #[command(alias = "ls")]
+    List {
+        /// Only show the most recent N statements.
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
+        /// Only include statements on or after this date.
+        #[arg(long, value_name = "DATE")]
+        since: Option<String>,
+        /// Only include statements on or before this date.
+        #[arg(long, value_name = "DATE")]
+        until: Option<String>,
+    },
+    /// Download a statement PDF by id (its bill date), or every one with --all.
+    #[command(alias = "get")]
+    Download(DocumentsDownloadArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct DocumentsDownloadArgs {
+    /// Document id from `documents list` — the bill date (YYYY-MM-DD). Omit and
+    /// pass `--all` for every statement.
+    pub id: Option<String>,
+    /// Download every statement (write to a directory with `-o`).
+    #[arg(long, conflicts_with = "id")]
+    pub all: bool,
+    /// Where to write: a file or `-` for stdout (single id), or a directory
+    /// (with `--all`). Default: `./bill-<date>.pdf`.
     #[arg(short, long, value_name = "PATH")]
     pub output: Option<String>,
 }
