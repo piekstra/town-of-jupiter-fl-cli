@@ -1,6 +1,12 @@
 # cargo-deny configuration. Run: cargo deny check
 [advisories]
 yanked = "deny"
+ignore = [
+    # Unmaintained (informational; no vulnerability). It comes in through
+    # scraper 0.20 -> selectors 0.25. selectors drops it at 0.32, which
+    # scraper reaches at 0.25. That is a manifest bump; drop this ignore with it.
+    { id = "RUSTSEC-2025-0057", reason = "fxhash: unmaintained; pulled by scraper 0.20's selectors 0.25" },
+]
 
 [licenses]
 # Permissive licenses we accept for dependencies.
