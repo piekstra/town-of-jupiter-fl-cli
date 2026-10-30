@@ -31,7 +31,7 @@ check: fmt-check lint test build
 # future install.
 install: SIGN_TARGET = $${CARGO_INSTALL_ROOT:-$$HOME/.cargo}/bin/tojfl
 install:
-	$(CARGO) install --path $(CLI_PATH)
+	$(CARGO) install --path $(CLI_PATH) --locked
 	@$(SIGN)
 
 clean:
