@@ -5,7 +5,7 @@ Repo-local facts for working on `tojfl`. Architecture rationale lives in
 
 ## Prerequisites
 
-- Rust 1.82+ (`rustup`).
+- Rust 1.88+ (`rustup`).
 - On Linux, OpenSSL dev headers (`pkg-config`, `libssl-dev`) — the HTTP client
   links **native-tls** (required; see below).
 
