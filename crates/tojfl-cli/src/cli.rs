@@ -2,6 +2,7 @@
 
 use clap::{Args, Parser, Subcommand};
 use clap_complete::Shell;
+use pk_cli_core::CommonArgs;
 pub use pk_cli_selfupdate::SelfUpdateArgs;
 
 /// tojfl — command-line client for the Town of Jupiter, FL utility portal.
@@ -22,9 +23,8 @@ pub struct Cli {
 
 #[derive(Debug, Args)]
 pub struct GlobalOpts {
-    /// Emit JSON instead of formatted tables.
-    #[arg(long, global = true)]
-    pub json: bool,
+    #[command(flatten)]
+    pub common: CommonArgs,
 
     /// Emit CSV instead of formatted tables (row commands + single-record views).
     #[arg(long, global = true, conflicts_with = "json")]
@@ -45,18 +45,6 @@ pub struct GlobalOpts {
     /// Override the portal base URL.
     #[arg(long, global = true, value_name = "URL")]
     pub base_url: Option<String>,
-
-    /// Verbose diagnostics on stderr.
-    #[arg(short, long, global = true)]
-    pub verbose: bool,
-
-    /// Suppress non-error stderr output.
-    #[arg(short, long, global = true)]
-    pub quiet: bool,
-
-    /// Disable ANSI color. Also honored via $NO_COLOR.
-    #[arg(long, global = true, env = "NO_COLOR")]
-    pub no_color: bool,
 }
 
 #[derive(Debug, Subcommand)]
