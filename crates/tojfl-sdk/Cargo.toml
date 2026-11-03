@@ -9,6 +9,7 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+pk-cli-core.workspace = true
 reqwest.workspace = true
 scraper.workspace = true
 serde.workspace = true
