@@ -43,11 +43,18 @@ replaces it.
 
 Which account the portal reports is state on that shared session, and no tool result
 says whose it is. So a call for another account selects it, reads, checks that the portal
-still reports it, and selects the account it found again, which commands with no
-`--account` go on reading. If another process switched the account during the read, or
-the home page states no account number to check, the tool answers with an error rather
-than rows it cannot confirm. A command run in the moments a call is on another account
-can see that account.
+still reports it, and selects the account it found again. If another process switched
+the account during the read, or the home page states no account number to check, the
+tool answers with an error rather than rows it cannot confirm.
+
+On a login with several accounts and no `default_account`, commands with no `--account`
+read whichever account the session is on, and a call can move that: for the moments it
+is on another account; or until something selects again, if the server is stopped or the
+portal fails between selecting and selecting back (a line on the server's stderr is the
+only trace of a failure), or if two servers overlap. The bills table does not name the
+account, and a command has no way to notice. **Set `default_account` on such a login:**
+every command then selects it on each run, and none of this reaches them. `tojfl account
+show` names the account the session is on.
 
 The Claude Desktop extension (`.mcpb`) holds the username and password in Claude
 Desktop's secure store (`user_config`, the password `sensitive`) and passes them to its
