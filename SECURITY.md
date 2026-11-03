@@ -15,9 +15,9 @@ the copy of the `--http` bearer token you give your own Cloudflare Worker:
 | What | Where | Notes |
 | --- | --- | --- |
 | Portal password | OS keychain, service `tojfl`, item `portal-password`, saved by `tojfl auth login --save`. `$TOJFL_PASSWORD` comes first; a `password` in the config file is the last resort. | Never logged or printed. |
-| Portal session | A file in the OS state directory, owner-only | The cookies of the last sign-in. `tojfl auth logout` removes it. |
+| Portal session | A file in the OS state directory, owner-only, shared by the commands and every running server | The cookies of the last sign-in. `tojfl auth logout` removes it. A file that cannot be parsed counts as no session. |
 | `--http` bearer token | OS keychain, service `piekstra.tojfl`, item `mcp-http-token`, or `TOJFL_MCP_TOKEN` | A copy lives in your Cloudflare Worker. |
-| Non-secret settings | The config file in the OS config directory, or `./tojfl.toml` | Username, default account, base URL. |
+| Non-secret settings | The config file in the OS config directory, or `./tojfl.toml` | Username, default account, base URL. `tojfl mcp` reads only the OS config path or `--config`: a client can start it in any directory, and a `tojfl.toml` there could name another host to send the password to. |
 
 ## The MCP server
 
@@ -40,6 +40,10 @@ the login; the next call that finds a different password or username tries that.
 Starting the server again sends it once more. A session saved for a different username
 from the configured one is not used: the server signs in as the configured one, which
 replaces it.
+
+Which account the portal reports is state on that shared session. Every call selects
+its account first, and if another process has switched it by the time the read is done,
+the tool answers with an error rather than another account's rows.
 
 The Claude Desktop extension (`.mcpb`) holds the username and password in Claude
 Desktop's secure store (`user_config`, the password `sensitive`) and passes them to its

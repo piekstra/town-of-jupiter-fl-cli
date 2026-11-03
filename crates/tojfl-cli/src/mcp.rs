@@ -9,7 +9,15 @@
 //! The server signs in itself rather than through the SDK's silent refresh, which
 //! would send a refused password again on every call. It reads a credential and
 //! never writes one, and each call reads the config, so listing the tools touches
-//! no file and a server left running sees the sign-in the user does next.
+//! no file and a server left running sees the sign-in the user does next. The
+//! config is `--config` or the OS config path, never `./tojfl.toml`: a client can
+//! start this server in any project, and a file there could send the password to
+//! another host.
+//!
+//! Which account the portal reports is state on the session, which commands and
+//! other servers share through the session file. So every read names its account,
+//! and a list, which does not say whose it is, is checked against the account the
+//! portal then reports.
 //!
 //! The commands' mappers are best-effort, for a person who can see the page. A
 //! tool's answer goes to a model as fact, so here an answer the portal did not
@@ -71,7 +79,8 @@ fn with_source<R: Reads>(
         "Town of Jupiter utility access here is read-only: no tool can make a payment or change \
          anything. Bills are statements, whose paid state is not reported. Payments come from \
          the portal's ledger and may be marked pending. Usage is by the periods the portal \
-         reports, in its units.",
+         reports, in its units. On a login with several accounts and no default, a call that \
+         names no account reads the first one linked.",
     );
     // The keychain is not read while the variable is set, and a Claude Desktop
     // extension bundles its binary, so `tojfl auth login` would fix nothing.
@@ -86,15 +95,16 @@ fn with_source<R: Reads>(
     UtilityTools::new(server, source).metering("water use")
 }
 
-/// The portal reads the tools need. `account` is the one to activate first;
-/// `None` is the default the config names, or the session's active account.
+/// The portal reads the tools need. `account` is the one to activate first.
 pub trait Reads {
+    /// `--account`, or the config's `default_account`.
+    fn default_account(&self) -> Result<Option<String>, AppError>;
     fn accounts(&self) -> Result<Vec<LinkedAccount>, AppError>;
-    fn summary(&self, account: Option<&str>) -> Result<Summary, AppError>;
-    fn service(&self, account: Option<&str>) -> Result<ServiceInfo, AppError>;
-    fn bills(&self, account: Option<&str>) -> Result<Vec<Bill>, AppError>;
-    fn transactions(&self, account: Option<&str>) -> Result<Vec<Transaction>, AppError>;
-    fn usage(&self, account: Option<&str>) -> Result<Vec<UsageRecord>, AppError>;
+    fn summary(&self, account: &str) -> Result<Summary, AppError>;
+    fn service(&self, account: &str) -> Result<ServiceInfo, AppError>;
+    fn bills(&self, account: &str) -> Result<Vec<Bill>, AppError>;
+    fn transactions(&self, account: &str) -> Result<Vec<Transaction>, AppError>;
+    fn usage(&self, account: &str) -> Result<Vec<UsageRecord>, AppError>;
 }
 
 /// `Reads` over the portal. An SDK [`Portal`] holds a `RefCell` and is built per
@@ -199,7 +209,7 @@ impl LivePortal {
     fn config(&self, account: Option<&str>) -> Result<Config, SdkError> {
         let mut cfg = match &self.config_path {
             Some(path) => Config::load_from(Path::new(path))?,
-            None => Config::load()?,
+            None => Config::load_default()?,
         };
         if self.username.is_some() {
             cfg.username.clone_from(&self.username);
@@ -265,29 +275,70 @@ impl LivePortal {
     }
 }
 
+const ANOTHER_ACCOUNT: &str = "the portal reported a different account from the one asked for";
+
+/// Numbers differ only in leading zeros between the portal's pages.
+fn same_account(asked: &str, reported: &str) -> bool {
+    asked.trim_start_matches('0') == reported.trim_start_matches('0')
+}
+
+/// `read`, unless the portal then reports another account. A page that states no
+/// number has nothing to check against.
+fn confirmed<T>(
+    asked: &str,
+    read: impl FnOnce() -> Result<T, SdkError>,
+    reported: impl FnOnce() -> Result<Option<String>, SdkError>,
+) -> Result<T, SdkError> {
+    let value = read()?;
+    match reported()? {
+        Some(reported) if !same_account(asked, &reported) => {
+            Err(SdkError::Portal(ANOTHER_ACCOUNT.into()))
+        }
+        _ => Ok(value),
+    }
+}
+
+impl LivePortal {
+    fn read_confirmed<T>(
+        &self,
+        account: &str,
+        op: impl Fn(&Portal) -> Result<T, SdkError>,
+    ) -> Result<T, AppError> {
+        self.read(Some(account), |portal| {
+            confirmed(account, || op(portal), || portal.reported_account())
+        })
+    }
+}
+
 impl Reads for LivePortal {
+    fn default_account(&self) -> Result<Option<String>, AppError> {
+        Ok(self.config(None).map_err(cli_error)?.default_account)
+    }
+
     fn accounts(&self) -> Result<Vec<LinkedAccount>, AppError> {
         self.read(None, Portal::list_accounts)
     }
 
-    fn summary(&self, account: Option<&str>) -> Result<Summary, AppError> {
-        self.read(account, Portal::summary)
+    // The account page says whose it is, and `JupiterSource::summary` checks that.
+    fn summary(&self, account: &str) -> Result<Summary, AppError> {
+        self.read(Some(account), Portal::summary)
     }
 
-    fn service(&self, account: Option<&str>) -> Result<ServiceInfo, AppError> {
-        self.read(account, Portal::service_info)
+    // Only ever decides whether an empty list is an error.
+    fn service(&self, account: &str) -> Result<ServiceInfo, AppError> {
+        self.read(Some(account), Portal::service_info)
     }
 
-    fn bills(&self, account: Option<&str>) -> Result<Vec<Bill>, AppError> {
-        self.read(account, Portal::bills)
+    fn bills(&self, account: &str) -> Result<Vec<Bill>, AppError> {
+        self.read_confirmed(account, Portal::bills)
     }
 
-    fn transactions(&self, account: Option<&str>) -> Result<Vec<Transaction>, AppError> {
-        self.read(account, Portal::transactions)
+    fn transactions(&self, account: &str) -> Result<Vec<Transaction>, AppError> {
+        self.read_confirmed(account, Portal::transactions)
     }
 
-    fn usage(&self, account: Option<&str>) -> Result<Vec<UsageRecord>, AppError> {
-        self.read(account, Portal::usage)
+    fn usage(&self, account: &str) -> Result<Vec<UsageRecord>, AppError> {
+        self.read_confirmed(account, Portal::usage)
     }
 }
 
@@ -353,11 +404,38 @@ pub struct JupiterSource<R> {
     portal: R,
 }
 
+impl<R: Reads> JupiterSource<R> {
+    /// The named account, else the default, else the login's first, the order the
+    /// family's other CLIs use. Never "whichever the session has active", which an
+    /// earlier call may have left on another account.
+    fn account(&self, named: Option<&str>) -> Result<String, AppError> {
+        if let Some(account) = named {
+            return Ok(account.to_string());
+        }
+        if let Some(account) = self.portal.default_account()? {
+            return Ok(account);
+        }
+        self.linked()?
+            .into_iter()
+            .next()
+            .map(|a| a.account_number)
+            .ok_or_else(|| shape_error("list of linked accounts"))
+    }
+
+    /// Every login has an account, so an empty list is a page this could not read.
+    fn linked(&self) -> Result<Vec<LinkedAccount>, AppError> {
+        let linked = self.portal.accounts()?;
+        if linked.is_empty() {
+            return Err(shape_error("list of linked accounts"));
+        }
+        Ok(linked)
+    }
+}
+
 impl<R: Reads> UtilitySource for JupiterSource<R> {
     async fn accounts(&self) -> Result<Vec<UtilityAccount>, AppError> {
         Ok(self
-            .portal
-            .accounts()?
+            .linked()?
             .into_iter()
             .map(|a| UtilityAccount {
                 id: a.account_number,
@@ -368,28 +446,25 @@ impl<R: Reads> UtilitySource for JupiterSource<R> {
     }
 
     async fn summary(&self, account: Option<&str>) -> Result<UtilitySummary, AppError> {
-        let summary = self.portal.summary(account)?;
+        let account = self.account(account)?;
+        let summary = self.portal.summary(&account)?;
         if summary.account.balance.is_none() {
             return Err(shape_error("account page"));
         }
-        // Which account the page reports is state on the session, which another
-        // `tojfl` can change between selecting and reading. Numbers differ only in
-        // leading zeros between the portal's pages.
-        let reported = summary.account.account_number.trim_start_matches('0');
-        if let Some(named) = account {
-            if !reported.is_empty() && reported != named.trim_start_matches('0') {
-                return Err(AppError::Upstream(
-                    "the portal reported a different account from the one asked for".into(),
-                ));
-            }
+        // Another `tojfl` can change the session's account between selecting and
+        // reading.
+        let reported = summary.account.account_number.trim();
+        if !reported.is_empty() && !same_account(&account, reported) {
+            return Err(AppError::Upstream(ANOTHER_ACCOUNT.into()));
         }
         Ok(commands::summary_dto(&summary))
     }
 
     async fn statements(&self, account: Option<&str>) -> Result<Vec<Statement>, AppError> {
-        let rows = self.portal.bills(account)?;
+        let account = self.account(account)?;
+        let rows = self.portal.bills(&account)?;
         if rows.is_empty() {
-            let service = self.portal.service(account)?;
+            let service = self.portal.service(&account)?;
             empty_is_an_error(service.last_bill_date.as_ref(), "billing history")?;
             return Ok(Vec::new());
         }
@@ -412,9 +487,10 @@ impl<R: Reads> UtilitySource for JupiterSource<R> {
         account: Option<&str>,
         _since: Option<&str>,
     ) -> Result<Vec<Payment>, AppError> {
-        let rows = self.portal.transactions(account)?;
+        let account = self.account(account)?;
+        let rows = self.portal.transactions(&account)?;
         if rows.is_empty() {
-            let service = self.portal.service(account)?;
+            let service = self.portal.service(&account)?;
             empty_is_an_error(service.last_payment_date.as_ref(), "transaction history")?;
             return Ok(Vec::new());
         }
@@ -433,7 +509,7 @@ impl<R: Reads> UtilitySource for JupiterSource<R> {
         if payments.is_empty() {
             // Payments that no longer read as credits called payments would look
             // the same as none. The service page dates the latest one.
-            let service = self.portal.service(account)?;
+            let service = self.portal.service(&account)?;
             if ledger_covers(&rows, service.last_payment_date.as_deref()) {
                 return Err(shape_error("transaction history"));
             }
@@ -443,9 +519,10 @@ impl<R: Reads> UtilitySource for JupiterSource<R> {
     }
 
     async fn usage(&self, account: Option<&str>) -> Result<Vec<UsagePeriod>, AppError> {
-        let rows = self.portal.usage(account)?;
+        let account = self.account(account)?;
+        let rows = self.portal.usage(&account)?;
         if rows.is_empty() {
-            let service = self.portal.service(account)?;
+            let service = self.portal.service(&account)?;
             empty_is_an_error(service.last_read_date.as_ref(), "usage history")?;
             return Ok(Vec::new());
         }

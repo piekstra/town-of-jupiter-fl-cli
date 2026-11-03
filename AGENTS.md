@@ -15,7 +15,7 @@ substance lives in the documents it points to. Keep it and `CLAUDE.md` short.
 Everything runs through the Makefile:
 
 ```bash
-make check   # fmt-check + clippy (-D warnings) + test + build — run before pushing
+make verify  # fmt-check + clippy (-D warnings) + test + smoke — run before pushing
 ```
 
 ## Conventions

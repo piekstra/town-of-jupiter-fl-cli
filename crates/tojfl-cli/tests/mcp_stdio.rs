@@ -4,6 +4,7 @@
 //! keychain read or request.
 
 use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{channel, Receiver};
 use std::time::Duration;
@@ -25,14 +26,20 @@ struct Server {
 
 impl Server {
     fn start() -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_tojfl"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_tojfl"));
+        command
             .arg("mcp")
             .env(
                 "XDG_CONFIG_HOME",
                 std::env::temp_dir().join(format!("tojfl-mcp-stdio-test-{}", std::process::id())),
             )
             .env_remove("TOJFL_USERNAME")
-            .env_remove("TOJFL_PASSWORD")
+            .env_remove("TOJFL_PASSWORD");
+        Self::spawn(command)
+    }
+
+    fn spawn(mut command: Command) -> Self {
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -121,4 +128,57 @@ fn a_client_initializes_lists_and_gets_an_actionable_usage_error() {
     let text = r["content"][0]["text"].as_str().unwrap();
     assert!(text.starts_with("usage:"), "{text}");
     assert!(text.contains("since"), "{text}");
+}
+
+/// A client can start the server in any project, and the config names the host a
+/// password is posted to. Set up so that a server reading this file would sign in
+/// there: the password is in the environment and the file holds the username.
+/// Without it the sign-in stops at having no username, before any request.
+#[test]
+fn a_config_file_in_the_working_directory_is_not_read() {
+    let dir = std::env::temp_dir().join(format!("tojfl-mcp-cwd-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let host = TcpListener::bind("127.0.0.1:0").unwrap();
+    host.set_nonblocking(true).unwrap();
+    std::fs::write(
+        dir.join("tojfl.toml"),
+        format!(
+            "username = \"placeholder\"\nbase_url = \"http://{}\"\n",
+            host.local_addr().unwrap()
+        ),
+    )
+    .unwrap();
+
+    let mut command = Command::new(env!("CARGO_BIN_EXE_tojfl"));
+    command
+        .arg("mcp")
+        .current_dir(&dir)
+        .env("HOME", &dir)
+        .env("XDG_CONFIG_HOME", dir.join("config"))
+        .env("XDG_DATA_HOME", dir.join("data"))
+        .env("TOJFL_PASSWORD", "placeholder")
+        .env_remove("TOJFL_USERNAME");
+    let mut s = Server::spawn(command);
+    s.request(
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "0"}
+        }),
+    );
+    let call = s.request(
+        2,
+        "tools/call",
+        json!({"name": "jupiter_bills", "arguments": {}}),
+    );
+    let text = call["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.starts_with("auth:"), "{text}");
+    assert!(text.contains("no portal username"), "{text}");
+    assert!(
+        host.accept().is_err(),
+        "the server connected to the host the working directory's file names"
+    );
 }

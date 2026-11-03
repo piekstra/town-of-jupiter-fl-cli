@@ -1,4 +1,4 @@
-# tojfl — build contract. `make check` is the pre-push gate.
+# tojfl — build contract. `make verify` is the pre-push gate.
 
 CARGO ?= cargo
 CLI_PATH := crates/tojfl-cli

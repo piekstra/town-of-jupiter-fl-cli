@@ -386,6 +386,13 @@ impl Portal {
 
     // Fetch helpers assume the caller already ran `ready()`, so `summary()` can
     // compose several without repeating the auth/account-activation round-trips.
+    /// The account number the portal now reports, without selecting one first.
+    /// `None` when the page does not state it.
+    pub fn reported_account(&self) -> Result<Option<String>> {
+        let number = self.fetch_account()?.account_number;
+        Ok((!number.trim().is_empty()).then_some(number))
+    }
+
     fn fetch_account(&self) -> Result<Account> {
         let html = self.client.get_text(pages::HOME)?;
         Ok(scrape::parse_account_summary(&html))

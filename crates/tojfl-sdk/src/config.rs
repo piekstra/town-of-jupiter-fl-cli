@@ -66,6 +66,12 @@ impl Config {
         if local.exists() {
             return Self::load_from(local);
         }
+        Self::load_default()
+    }
+
+    /// Load config from the OS config path alone, whatever the working directory
+    /// holds. A missing file is not an error.
+    pub fn load_default() -> Result<Config> {
         let path = Self::default_path()?;
         if path.exists() {
             return Self::load_from(&path);

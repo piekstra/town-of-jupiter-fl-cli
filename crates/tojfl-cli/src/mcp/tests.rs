@@ -21,6 +21,7 @@ struct Fixtures {
     bills: Vec<Bill>,
     transactions: Vec<Transaction>,
     usage: Vec<UsageRecord>,
+    default_account: Option<String>,
     /// Every read, with its account.
     calls: Rc<RefCell<Vec<String>>>,
     refused: bool,
@@ -34,6 +35,7 @@ impl Fixtures {
             bills: fixture(include_str!("../../tests/fixtures/bills.json")),
             transactions: fixture(include_str!("../../tests/fixtures/transactions.json")),
             usage: fixture(include_str!("../../tests/fixtures/usage.json")),
+            default_account: None,
             calls: Rc::default(),
             refused: false,
         }
@@ -54,33 +56,37 @@ impl Fixtures {
 }
 
 impl Reads for Fixtures {
+    fn default_account(&self) -> Result<Option<String>, AppError> {
+        Ok(self.default_account.clone())
+    }
+
     fn accounts(&self) -> Result<Vec<LinkedAccount>, AppError> {
         self.log("accounts", None)?;
         Ok(self.accounts.clone())
     }
 
-    fn summary(&self, account: Option<&str>) -> Result<Summary, AppError> {
-        self.log("summary", account)?;
+    fn summary(&self, account: &str) -> Result<Summary, AppError> {
+        self.log("summary", Some(account))?;
         Ok(self.summary.clone())
     }
 
-    fn service(&self, account: Option<&str>) -> Result<ServiceInfo, AppError> {
-        self.log("service", account)?;
+    fn service(&self, account: &str) -> Result<ServiceInfo, AppError> {
+        self.log("service", Some(account))?;
         Ok(self.summary.service.clone())
     }
 
-    fn bills(&self, account: Option<&str>) -> Result<Vec<Bill>, AppError> {
-        self.log("bills", account)?;
+    fn bills(&self, account: &str) -> Result<Vec<Bill>, AppError> {
+        self.log("bills", Some(account))?;
         Ok(self.bills.clone())
     }
 
-    fn transactions(&self, account: Option<&str>) -> Result<Vec<Transaction>, AppError> {
-        self.log("transactions", account)?;
+    fn transactions(&self, account: &str) -> Result<Vec<Transaction>, AppError> {
+        self.log("transactions", Some(account))?;
         Ok(self.transactions.clone())
     }
 
-    fn usage(&self, account: Option<&str>) -> Result<Vec<UsageRecord>, AppError> {
-        self.log("usage", account)?;
+    fn usage(&self, account: &str) -> Result<Vec<UsageRecord>, AppError> {
+        self.log("usage", Some(account))?;
         Ok(self.usage.clone())
     }
 }
@@ -280,13 +286,108 @@ fn an_empty_list_is_an_empty_list_when_the_service_page_agrees() {
 }
 
 #[test]
-fn a_ledger_of_charges_alone_is_no_payments() {
+fn a_ledger_that_starts_after_the_last_payment_shows_no_payments() {
     let mut portal = Fixtures::new();
     portal
         .transactions
         .retain(|t| t.description == "Utility Bill");
     let t = tools_over(portal);
     assert_eq!(ok(&t, "jupiter_payments", json!({}))["returned"], 0);
+}
+
+#[test]
+fn a_ledger_that_reaches_the_last_payment_and_shows_none_is_an_error() {
+    let mut portal = Fixtures::new();
+    // Every amount positive, as a change of sign on the page would make them.
+    for row in &mut portal.transactions {
+        row.amount = row.amount.map(|m| Money::from_cents(m.cents.abs()));
+    }
+    upstream(portal, "jupiter_payments");
+}
+
+#[test]
+fn a_ledger_covers_a_date_from_its_oldest_row_on() {
+    let rows = Fixtures::new().transactions;
+    assert!(ledger_covers(&rows, Some("04/01/2026")));
+    assert!(ledger_covers(&rows, Some("06/20/2026")));
+    assert!(!ledger_covers(&rows, Some("03/31/2026")));
+    assert!(!ledger_covers(&rows, Some("not a date")));
+    assert!(!ledger_covers(&rows, None));
+    assert!(!ledger_covers(&[], Some("06/20/2026")));
+}
+
+#[test]
+fn a_call_naming_no_account_reads_the_default_and_then_the_first_linked() {
+    let mut portal = Fixtures::new();
+    portal.default_account = Some("234567".into());
+    let calls = portal.calls.clone();
+    ok(&tools_over(portal), "jupiter_bills", json!({}));
+    assert_eq!(*calls.borrow(), ["bills 234567"]);
+
+    let portal = Fixtures::new();
+    let calls = portal.calls.clone();
+    ok(&tools_over(portal), "jupiter_usage", json!({}));
+    assert_eq!(*calls.borrow(), ["accounts -", "usage 123456"]);
+}
+
+#[test]
+fn an_empty_list_of_accounts_is_a_page_this_could_not_read() {
+    // With no default there is no account to read.
+    let mut portal = Fixtures::new();
+    portal.accounts.clear();
+    upstream(portal, "jupiter_balance");
+
+    let mut portal = Fixtures::new();
+    portal.accounts.clear();
+    upstream(portal, "jupiter_bills");
+
+    // With one, the balance says the list is unavailable, not that there is one
+    // account.
+    let mut portal = Fixtures::new();
+    portal.accounts.clear();
+    portal.default_account = Some("123456".into());
+    let out = ok(&tools_over(portal), "jupiter_balance", json!({}));
+    assert_eq!(out["balance"], "12.34");
+    assert_eq!(out["accounts_unavailable"], true);
+}
+
+mod confirmed_reads {
+    use super::*;
+
+    #[test]
+    fn a_read_stands_when_the_portal_reports_the_same_account() {
+        let read = confirmed("123456", || Ok("rows"), || Ok(Some("0123456".into())));
+        assert_eq!(read.unwrap(), "rows");
+    }
+
+    #[test]
+    fn a_read_stands_when_the_page_states_no_number() {
+        assert_eq!(
+            confirmed("123456", || Ok("rows"), || Ok(None)).unwrap(),
+            "rows"
+        );
+    }
+
+    #[test]
+    fn another_account_is_an_upstream_error_not_its_rows() {
+        let err = confirmed("123456", || Ok("rows"), || Ok(Some("234567".into()))).unwrap_err();
+        assert!(matches!(cli_error(err), AppError::Upstream(_)));
+    }
+
+    #[test]
+    fn a_failed_read_asks_nothing_further() {
+        let asked = Cell::new(false);
+        let read: Result<&str, _> = confirmed(
+            "123456",
+            || Err(SdkError::NotAuthenticated),
+            || {
+                asked.set(true);
+                Ok(None)
+            },
+        );
+        assert!(matches!(read, Err(SdkError::NotAuthenticated)));
+        assert!(!asked.get());
+    }
 }
 
 #[test]

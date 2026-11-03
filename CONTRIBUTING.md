@@ -11,15 +11,15 @@ welcome.
   or fixtures. The CLI handles real PII at runtime (that's its job); test
   fixtures use only obvious placeholders (e.g. `001234`, `100 MAPLE AVE`). If you
   pasted a real value from a live run, scrub it before committing.
-- Keep the working tree clean: `make check` (fmt + clippy `-D warnings` + tests +
-  build) must pass before you push.
+- Keep the working tree clean: `make verify` (fmt + clippy `-D warnings` + tests +
+  smoke) must pass before you push.
 
 ## Workflow
 
 1. Branch off `main`.
 2. Make the change with a test where it makes sense (parsers/auth/DNN helpers
    have inline `#[cfg(test)]` tests using HTML fixtures — no network).
-3. Run `make check`.
+3. Run `make verify`.
 4. Open a PR describing the change and how you verified it.
 
 ## Style

@@ -20,6 +20,13 @@ fn the_manifest_version_is_the_crate_version() {
     assert_eq!(manifest()["version"], env!("CARGO_PKG_VERSION"));
 }
 
+#[test]
+fn the_version_file_mirrors_the_crate_version() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../version.txt");
+    let version = std::fs::read_to_string(path).unwrap();
+    assert_eq!(version.trim(), env!("CARGO_PKG_VERSION"));
+}
+
 /// AGENTS.md names the spec's tag; a pin bump that forgets it leaves agents
 /// reading the wrong spec.
 #[test]
