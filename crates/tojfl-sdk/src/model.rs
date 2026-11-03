@@ -61,7 +61,7 @@ impl std::fmt::Display for Money {
         let ds = dollars.to_string();
         let mut grouped = String::new();
         for (i, ch) in ds.chars().enumerate() {
-            if i > 0 && (ds.len() - i) % 3 == 0 {
+            if i > 0 && (ds.len() - i).is_multiple_of(3) {
                 grouped.push(',');
             }
             grouped.push(ch);

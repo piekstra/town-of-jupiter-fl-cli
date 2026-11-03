@@ -42,7 +42,7 @@ There's no API, so everything here is built on:
 
 ## Install
 
-Requires a Rust toolchain (1.82+).
+Requires a Rust toolchain (1.88+).
 
 ```bash
 git clone https://github.com/piekstra/town-of-jupiter-fl-cli
