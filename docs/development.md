@@ -5,7 +5,7 @@ Repo-local facts for working on `tojfl`. Architecture rationale lives in
 
 ## Prerequisites
 
-- Rust 1.88+ (`rustup`).
+- Rust 1.89+ (`rustup`).
 - On Linux, OpenSSL dev headers (`pkg-config`, `libssl-dev`) — the HTTP client
   links **native-tls** (required; see below).
 
@@ -24,7 +24,8 @@ make build     # cargo build --workspace
 make test      # cargo test --workspace
 make lint      # cargo clippy --workspace --all-targets -- -D warnings
 make fmt       # cargo fmt --all
-make check     # fmt-check + lint + test + build (run before pushing)
+make check     # fmt-check + lint + test + build
+make verify    # fmt-check + lint + test + smoke (run before pushing)
 make install   # cargo install --path crates/tojfl-cli
 ```
 

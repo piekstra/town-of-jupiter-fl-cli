@@ -12,6 +12,10 @@ Two-layer design (SDK + CLI), mirroring the pattern used across these tools:
   handling, HTML scraping, models, config/keychain, session persistence.
 - **`crates/tojfl-cli`** — clap-derive CLI that produces the **`tojfl`** binary.
   Owns argument parsing and table/JSON rendering; contains no portal logic.
+  `src/mcp.rs` serves `tojfl mcp`: `pk_cli_utility::mcp`'s shared tools over a `Reads`
+  seam, fixtures in `src/mcp/tests.rs`. It reads credentials and never writes one, and
+  an answer the portal did not give is an upstream error. `packaging/mcpb/manifest.json`
+  is the Claude Desktop extension; `tests/packaging.rs` holds it to the binary.
 
 ## What the portal is
 

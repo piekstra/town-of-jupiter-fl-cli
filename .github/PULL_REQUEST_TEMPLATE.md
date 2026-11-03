@@ -4,11 +4,11 @@
 
 ## How verified
 
-<!-- Tests added/updated? `make check` passing? Any live check performed? -->
+<!-- Tests added/updated? `make verify` passing? Any live check performed? -->
 
 ## Checklist
 
-- [ ] `make check` passes (fmt, clippy `-D warnings`, tests, build)
+- [ ] `make verify` passes (fmt, clippy `-D warnings`, tests, smoke)
 - [ ] No secrets or personal data added to code, tests, or fixtures
 - [ ] Docs/README updated if the command surface changed
 

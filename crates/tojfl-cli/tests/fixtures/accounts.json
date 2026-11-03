@@ -1,0 +1,4 @@
+[
+  { "account_number": "123456", "name": "EXAMPLE OWNER", "service_address": "100 Example Street" },
+  { "account_number": "234567", "name": "EXAMPLE OWNER", "service_address": "200 Example Street" }
+]

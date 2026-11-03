@@ -1,0 +1,7 @@
+[
+  { "date": "07/05/2026", "description": "Utility Bill", "amount": { "cents": 1234 }, "extra": {} },
+  { "date": "06/20/2026", "description": "Payment - Thank You (Pending)", "amount": { "cents": -2345 }, "extra": {} },
+  { "date": "05/05/2026", "description": "Payment - Thank You", "amount": { "cents": -3456 }, "extra": {} },
+  { "date": "04/05/2026", "description": "Adjustment", "amount": { "cents": -100 }, "extra": {} },
+  { "date": "04/01/2026", "description": "Payment Reversal", "amount": { "cents": 3456 }, "extra": {} }
+]

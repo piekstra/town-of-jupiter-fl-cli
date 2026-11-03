@@ -12,6 +12,6 @@ pub fn run(args: &SelfUpdateArgs, json: bool, quiet: bool) -> Result<()> {
         target: env!("BUILD_TARGET").into(),
         current: env!("CARGO_PKG_VERSION").into(),
     }
-    .run(args, json, quiet)
+    .run_noting(args, json, quiet, &pk_cli_mcp::restart_note("tojfl"))
     .map_err(anyhow::Error::new)
 }

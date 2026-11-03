@@ -21,6 +21,17 @@ pub fn parse(s: &str) -> Option<Ymd> {
         .or_else(|| parse_month_name(s))
 }
 
+/// A month the portal names with no day, such as "Jun 2026", as (year, month).
+pub fn parse_month_year(s: &str) -> Option<(i32, u32)> {
+    let mut parts = s.split_whitespace();
+    let month = month_from_name(parts.next()?)?;
+    let year: i32 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() || !(1000..=9999).contains(&year) {
+        return None;
+    }
+    Some((year, month))
+}
+
 fn parse_iso(s: &str) -> Option<Ymd> {
     let mut it = s.split('-');
     let y = it.next()?.trim().parse().ok()?;
@@ -129,6 +140,19 @@ pub fn in_range(date_str: &str, since: Option<Ymd>, until: Option<Ymd>) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_month_and_a_year_parse_and_nothing_else_does() {
+        assert_eq!(parse_month_year("Jun 2026"), Some((2026, 6)));
+        assert_eq!(parse_month_year("June 2026"), Some((2026, 6)));
+        assert_eq!(parse_month_year("Jun 26"), None, "a year is four digits");
+        assert_eq!(parse_month_year("Jun 20261"), None, "a year is four digits");
+        assert_eq!(parse_month_year("Jun 2026 extra"), None);
+        assert_eq!(parse_month_year("Summer 2026"), None);
+        assert_eq!(parse_month_year("Jun"), None);
+        assert_eq!(parse_month_year("2026"), None);
+        assert_eq!(parse_month_year(""), None);
+    }
 
     #[test]
     fn parses_all_portal_and_input_shapes() {

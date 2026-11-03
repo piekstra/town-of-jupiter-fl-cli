@@ -42,7 +42,7 @@ There's no API, so everything here is built on:
 
 ## Install
 
-Requires a Rust toolchain (1.88+).
+Requires a Rust toolchain (1.89+).
 
 ```bash
 git clone https://github.com/piekstra/town-of-jupiter-fl-cli
@@ -123,6 +123,7 @@ password from the keychain if present; pipe one explicitly with
 | `tojfl open [ACCT]` | Open the utility portal in your browser (log in there) |
 | `tojfl config path\|init\|show\|set\|unset\|set-password\|clear-password` | Manage local config & credentials (`config set account 000000`) |
 | `tojfl self-update [--check] [-y]` | Update the binary in place from the latest GitHub release |
+| `tojfl mcp [--http --port N] [--new-token]` | Serve read-only tools to Claude over MCP (see [Use with Claude](#use-with-claude)) |
 
 Add `--json` to any command for machine-readable output, or `--csv` for a
 spreadsheet-friendly sheet (row commands and single-record views alike); `-v`
@@ -175,6 +176,66 @@ address**, so you can confirm you're paying the right premise.
 This tool **never handles card data.** It stops at the hosted processor page,
 by design — see below.
 
+## Use with Claude
+
+`tojfl mcp` serves four read-only tools to Claude over MCP: `jupiter_balance`,
+`jupiter_bills`, `jupiter_payments` and `jupiter_usage`. Nothing can make a payment or
+change your account. Payments come from the portal's ledger and may be marked pending.
+A statement's paid state is not reported. The server reads its settings from the OS
+config path or `--config`, never from a `./tojfl.toml`.
+
+On a login with several accounts, a call that names none reads the default, or else the
+first one linked. Set `default_account` in the config on such a login: without it,
+commands with no `--account` read whichever account the session they share with the
+server is on, and a tool call can leave that moved ([`SECURITY.md`](SECURITY.md)).
+
+**Claude Code.** After `tojfl auth login --save`:
+
+```sh
+claude mcp add jupiter -- tojfl mcp
+```
+
+Or install the `town-of-jupiter-fl-cli` plugin from
+[claude-plugins](https://github.com/piekstra/claude-plugins), which runs the same
+command.
+
+**Claude Desktop.** Download `tojfl-<version>.mcpb` from the
+[latest release](https://github.com/piekstra/town-of-jupiter-fl-cli/releases/latest)
+and open it. It asks for your portal username and password, keeps them in Claude
+Desktop's secure store, and passes them to the bundled `tojfl` as `$TOJFL_USERNAME` and
+`$TOJFL_PASSWORD`.
+
+Any other MCP client that launches a local server can run `tojfl mcp`.
+
+**Claude on the web and mobile.** claude.ai reaches tools through a remote connector,
+and your portal password stays on your computer, so `tojfl` serves the same tools from
+your computer to a connector you deploy into your own Cloudflare account:
+
+```console
+$ tojfl mcp --new-token            # once: a bearer token, saved in the keychain and printed for the Worker
+$ tojfl mcp --http --port 8735     # serve on 127.0.0.1 only
+```
+
+The connector, [cli-common's `connector/`](https://github.com/piekstra/cli-common/tree/main/connector#tools-from-your-computer-home-modules),
+reaches that port through a Cloudflare Tunnel in your account; its README walks through
+the tunnel, the VPC service, a launchd agent that keeps the server running, and the
+`HOME_JUPITER_TOKEN` secret, with the threat model. `--http` binds 127.0.0.1 only,
+refuses to start without the token, refuses any request whose `Host` is not loopback or
+that carries an `Origin`, and serves the read-only tools only. The password never leaves
+your computer, but tool results do: your balance, statements, payments, usage and
+service address pass through Cloudflare and reach Claude ([`SECURITY.md`](SECURITY.md)).
+While the computer sleeps, the tools answer that it is offline.
+
+After `tojfl self-update`, restart the server: a running one keeps the old code, and its
+launchd agent restarts it only when it exits. Its start line names the version.
+
+```console
+$ launchctl kickstart -k gui/$(id -u)/com.piekstra.tojfl-mcp-http
+```
+
+`self-update` does not reach a Claude Desktop extension, which runs its own copy.
+Install the new release's `.mcpb` too.
+
 ## Exit codes
 
 Commands follow the shared CLI-family exit-code contract, so scripts and
@@ -205,6 +266,8 @@ git push origin v0.2.0`), which triggers the release workflow. If you installed
 via a package manager, use that manager's upgrade instead.
 
 ## Privacy & security
+
+`tojfl mcp` sends what its tools return to Claude: see [`SECURITY.md`](SECURITY.md).
 
 This is a public repository, and it is built to keep your data out of it:
 

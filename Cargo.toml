@@ -6,9 +6,10 @@ members = [
 ]
 
 [workspace.package]
-version = "0.4.1"
+version = "0.5.0"
 edition = "2021"
-rust-version = "1.88"
+# pk-cli-auth (cli-common v0.21.0) needs 1.89.
+rust-version = "1.89"
 license = "MIT"
 repository = "https://github.com/piekstra/town-of-jupiter-fl-cli"
 authors = ["piekstra"]
@@ -32,11 +33,15 @@ directories = "5"
 keyring = { version = "3", features = ["apple-native", "sync-secret-service", "windows-native"] }
 rpassword = "7"
 clap_complete = "4"
-pk-cli-core = { git = "https://github.com/piekstra/cli-common", tag = "v0.15.1" }
-pk-cli-selfupdate = { git = "https://github.com/piekstra/cli-common", tag = "v0.15.1" }
-pk-cli-auth = { git = "https://github.com/piekstra/cli-common", tag = "v0.15.1" }
-pk-cli-utility = { git = "https://github.com/piekstra/cli-common", tag = "v0.15.1" }
-pk-cli-documents = { git = "https://github.com/piekstra/cli-common", tag = "v0.15.1" }
+pk-cli-core = { git = "https://github.com/piekstra/cli-common", tag = "v0.21.0" }
+pk-cli-selfupdate = { git = "https://github.com/piekstra/cli-common", tag = "v0.21.0" }
+pk-cli-auth = { git = "https://github.com/piekstra/cli-common", tag = "v0.21.0" }
+pk-cli-utility = { git = "https://github.com/piekstra/cli-common", tag = "v0.21.0", features = ["mcp"] }
+# `tojfl mcp`: pk-cli-utility's shared utility/v1 tools, served over stdio or
+# 127.0.0.1 (DESIGN.md §1.9).
+pk-cli-mcp = { git = "https://github.com/piekstra/cli-common", tag = "v0.21.0", features = ["stdio", "http"] }
+pk-cli-secrets = { git = "https://github.com/piekstra/cli-common", tag = "v0.21.0" }
+pk-cli-documents = { git = "https://github.com/piekstra/cli-common", tag = "v0.21.0" }
 toml = "0.8"
 comfy-table = "7"
 regex = "1"

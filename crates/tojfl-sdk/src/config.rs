@@ -9,8 +9,10 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-const KEYRING_SERVICE: &str = "tojfl";
-const KEYRING_USER: &str = "portal-password";
+/// The keychain service holding the portal password.
+pub const KEYRING_SERVICE: &str = "tojfl";
+/// The keychain account holding the portal password.
+pub const KEYRING_USER: &str = "portal-password";
 
 /// On-disk configuration (TOML). All fields optional so an empty file works.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -64,6 +66,12 @@ impl Config {
         if local.exists() {
             return Self::load_from(local);
         }
+        Self::load_default()
+    }
+
+    /// Load config from the OS config path alone, whatever the working directory
+    /// holds. A missing file is not an error.
+    pub fn load_default() -> Result<Config> {
         let path = Self::default_path()?;
         if path.exists() {
             return Self::load_from(&path);

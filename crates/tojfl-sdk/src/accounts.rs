@@ -32,7 +32,7 @@ pub fn select(client: &Client, account_number: &str) -> Result<bool> {
     let rows = parse_rows(&html);
     let row = match rows
         .iter()
-        .find(|r| r.account.account_number == account_number)
+        .find(|r| same_number(&r.account.account_number, account_number))
     {
         Some(r) => r,
         None => return Ok(false),
@@ -148,6 +148,12 @@ fn parse_dopostback(href: &str) -> Option<(String, String)> {
     ))
 }
 
+/// Whether two account numbers are the same, whatever leading zeros a page gives
+/// them.
+pub fn same_number(a: &str, b: &str) -> bool {
+    a.trim_start_matches('0') == b.trim_start_matches('0')
+}
+
 /// Turn a "not linked" `select` result into an error listing valid accounts.
 pub(crate) fn not_linked(account: &str, available: &[String]) -> Error {
     Error::NotFound(format!(
@@ -163,6 +169,13 @@ pub(crate) fn not_linked(account: &str, available: &[String]) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn account_numbers_compare_without_leading_zeros() {
+        assert!(same_number("001234", "1234"));
+        assert!(same_number("1234", "1234"));
+        assert!(!same_number("1234", "12340"));
+    }
 
     const GRID: &str = r#"
       <table id="ListAccounts_GridView1">

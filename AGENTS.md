@@ -15,7 +15,7 @@ substance lives in the documents it points to. Keep it and `CLAUDE.md` short.
 Everything runs through the Makefile:
 
 ```bash
-make check   # fmt-check + clippy (-D warnings) + test + build — run before pushing
+make verify  # fmt-check + clippy (-D warnings) + test + smoke — run before pushing
 ```
 
 ## Conventions
@@ -29,8 +29,8 @@ make check   # fmt-check + clippy (-D warnings) + test + build — run before pu
 ## The CLI family & cli-common
 
 This CLI conforms to **piekstra-cli/1** — the shared surface spec in
-[piekstra/cli-common](https://github.com/piekstra/cli-common) (`DESIGN.md`):
-standard `auth` / `config` / `self-update` / `completions` / `info` commands,
+[piekstra/cli-common](https://github.com/piekstra/cli-common) (`DESIGN.md`),
+pinned at **v0.21.0**: standard `auth` / `config` / `self-update` / `completions` / `info` commands,
 global `--json`, canonical DTOs (`auth-status/v1`, `self-update/v1`,
 `cli-info/v1`), and frozen exit codes 0–6.
 
