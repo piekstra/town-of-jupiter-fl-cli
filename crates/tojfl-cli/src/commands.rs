@@ -33,7 +33,7 @@ impl Ctx {
 // --- utility/v1 profile mapping -------------------------------------------
 
 /// SDK cents → profile `Money` (string-decimal dollars, utility/v1).
-fn pk_money(m: tojfl_sdk::Money) -> pk_cli_core::Money {
+pub(crate) fn pk_money(m: tojfl_sdk::Money) -> pk_cli_core::Money {
     let c = m.cents;
     pk_cli_core::Money::usd(format!(
         "{}{}.{:02}",
@@ -45,11 +45,50 @@ fn pk_money(m: tojfl_sdk::Money) -> pk_cli_core::Money {
 
 /// Portal date text (`MM/DD/YYYY`, `Mon DD, YYYY`) → ISO `YYYY-MM-DD` per the
 /// profile contract; unrecognized text passes through verbatim.
-fn iso_date(s: &str) -> String {
+pub(crate) fn iso_date(s: &str) -> String {
     match tojfl_sdk::date::parse(s) {
         Some((y, m, d)) => format!("{y:04}-{m:02}-{d:02}"),
         None => s.to_string(),
     }
+}
+
+/// The `utility-summary/v1` card for a summary.
+pub(crate) fn summary_dto(s: &tojfl_sdk::Summary) -> UtilitySummary {
+    let mut dto = UtilitySummary::new(pk_money(
+        s.account.balance.unwrap_or(tojfl_sdk::Money::ZERO),
+    ));
+    dto.due_date = s.account.due_date.as_deref().map(iso_date);
+    let acct = if s.account.account_number.is_empty() {
+        s.enrollment.account_number.clone()
+    } else {
+        Some(s.account.account_number.clone())
+    };
+    dto.account = acct.filter(|a| !a.is_empty());
+    dto.autopay = s.enrollment.autopay;
+    dto
+}
+
+/// A bill as `statement/v1`; `pos` is its 1-based position in the full history,
+/// the id `bills get <N>` takes.
+pub(crate) fn statement_of(pos: usize, b: &tojfl_sdk::Bill) -> Statement {
+    Statement {
+        id: pos.to_string(),
+        date: Some(iso_date(&b.date)),
+        amount: pk_money(b.amount.unwrap_or(tojfl_sdk::Money::ZERO)),
+        due_date: b.due_date.as_deref().map(iso_date),
+        paid: None,
+    }
+}
+
+/// A usage row as `usage-period/v1`. A row without a parseable quantity is
+/// unusable for consumers and skipped (same rule the SDK's stats use).
+pub(crate) fn usage_of(u: &tojfl_sdk::UsageRecord) -> Option<UsagePeriod> {
+    Some(UsagePeriod {
+        period: u.period.clone(),
+        quantity: u.quantity?,
+        unit: u.unit.clone().unwrap_or_default(),
+        cost: None,
+    })
 }
 
 // --- auth -----------------------------------------------------------------
@@ -159,6 +198,7 @@ pub fn info(_ctx: &Ctx) -> Result<()> {
             "profile",
             "ebill",
             "service",
+            "mcp",
             "contact",
         ],
     )
@@ -175,18 +215,7 @@ pub fn summary(ctx: &Ctx) -> Result<()> {
     if ctx.fmt.json {
         // utility/v1: the canonical card DTO. The full provider payload
         // stays available via `snapshot --json`.
-        let mut dto = UtilitySummary::new(pk_money(
-            s.account.balance.unwrap_or(tojfl_sdk::Money::ZERO),
-        ));
-        dto.due_date = s.account.due_date.as_deref().map(iso_date);
-        let acct = if s.account.account_number.is_empty() {
-            s.enrollment.account_number.clone()
-        } else {
-            Some(s.account.account_number.clone())
-        };
-        dto.account = acct.filter(|a| !a.is_empty());
-        dto.autopay = s.enrollment.autopay;
-        ctx.fmt.print_json(&dto)?;
+        ctx.fmt.print_json(&summary_dto(&s))?;
     } else {
         let acct = if s.account.account_number.is_empty() {
             opt(&s.enrollment.account_number)
@@ -451,13 +480,7 @@ pub fn bills(ctx: &Ctx, cmd: &BillsCmd) -> Result<()> {
         // utility/v1: statement-list/v1 envelope.
         let statements: Vec<Statement> = indexed
             .iter()
-            .map(|(pos, b)| Statement {
-                id: pos.to_string(),
-                date: Some(iso_date(&b.date)),
-                amount: pk_money(b.amount.unwrap_or(tojfl_sdk::Money::ZERO)),
-                due_date: b.due_date.as_deref().map(iso_date),
-                paid: None,
-            })
+            .map(|(pos, b)| statement_of(*pos, b))
             .collect();
         ctx.fmt.print_json(&Paged::new("statement", statements))?;
     } else {
@@ -773,20 +796,8 @@ pub fn usage(ctx: &Ctx, cmd: &UsageCmd) -> Result<()> {
                 items.truncate(*n);
             }
             if ctx.fmt.json {
-                // utility/v1: usage-period-list/v1 envelope. Rows without a
-                // parseable quantity are unusable for consumers and skipped
-                // (same rule the SDK's stats use).
-                let periods: Vec<UsagePeriod> = items
-                    .iter()
-                    .filter_map(|u| {
-                        Some(UsagePeriod {
-                            period: u.period.clone(),
-                            quantity: u.quantity?,
-                            unit: u.unit.clone().unwrap_or_default(),
-                            cost: None,
-                        })
-                    })
-                    .collect();
+                // utility/v1: usage-period-list/v1 envelope.
+                let periods: Vec<UsagePeriod> = items.iter().filter_map(usage_of).collect();
                 ctx.fmt.print_json(&Paged::new("usage-period", periods))?;
             } else {
                 let rows: Vec<Vec<String>> = items

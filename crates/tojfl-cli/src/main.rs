@@ -2,6 +2,7 @@
 
 mod cli;
 mod commands;
+mod mcp;
 mod output;
 mod selfupdate;
 
@@ -59,6 +60,11 @@ fn to_cli_error(err: &anyhow::Error) -> pk_cli_core::CliError {
 }
 
 fn run(cli: Cli) -> anyhow::Result<()> {
+    // The server reads the config per call, and none to list its tools.
+    if let Command::Mcp(args) = &cli.command {
+        return pk_cli_mcp::run(args, mcp::tools(&cli.global)).map_err(anyhow::Error::new);
+    }
+
     // Load config (explicit path, else default discovery) and apply CLI overrides.
     let mut cfg = match &cli.global.config {
         Some(path) => Config::load_from(Path::new(path))?,
@@ -126,6 +132,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             Ok(())
         }
         Command::Info => commands::info(&ctx),
+        Command::Mcp(_) => unreachable!("handled above"),
     }
 }
 

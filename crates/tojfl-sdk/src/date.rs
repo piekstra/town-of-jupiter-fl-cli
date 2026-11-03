@@ -21,6 +21,17 @@ pub fn parse(s: &str) -> Option<Ymd> {
         .or_else(|| parse_month_name(s))
 }
 
+/// A month the portal names with no day, such as "Jun 2026", as (year, month).
+pub fn parse_month_year(s: &str) -> Option<(i32, u32)> {
+    let mut parts = s.split_whitespace();
+    let month = month_from_name(parts.next()?)?;
+    let year: i32 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() || !(1000..=9999).contains(&year) {
+        return None;
+    }
+    Some((year, month))
+}
+
 fn parse_iso(s: &str) -> Option<Ymd> {
     let mut it = s.split('-');
     let y = it.next()?.trim().parse().ok()?;

@@ -53,6 +53,9 @@ pub enum Command {
     #[command(subcommand)]
     Auth(AuthCmd),
 
+    /// Serve read-only tools to Claude over MCP.
+    Mcp(pk_cli_mcp::McpArgs),
+
     /// At-a-glance overview: balance, due, last read/bill/payment, enrollment.
     Summary,
 

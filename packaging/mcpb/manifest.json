@@ -1,0 +1,104 @@
+{
+  "manifest_version": "0.3",
+  "name": "tojfl",
+  "display_name": "Town of Jupiter Utilities (tojfl)",
+  "version": "0.5.0",
+  "description": "Read-only access to your own Town of Jupiter, FL utility balance, statements, payments and water use, through the open-source tojfl CLI.",
+  "long_description": "Ask Claude about your Town of Jupiter utility account: what you owe and when it is due, what past statements came to, which payments posted, and how much water you used. Four read-only tools, jupiter_balance, jupiter_bills, jupiter_payments and jupiter_usage; nothing can make a payment or change your account. Your portal username and password stay on your computer: Claude Desktop keeps them in its own secure store and passes them to the bundled tojfl binary, which signs in to the town's portal directly. What the tools return (balance, statements, payments, usage, service address) goes to Claude as part of your conversation. Unofficial; not affiliated with the Town of Jupiter.",
+  "author": {
+    "name": "piekstra",
+    "url": "https://github.com/piekstra"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/piekstra/town-of-jupiter-fl-cli"
+  },
+  "homepage": "https://github.com/piekstra/town-of-jupiter-fl-cli",
+  "documentation": "https://github.com/piekstra/town-of-jupiter-fl-cli#use-with-claude",
+  "support": "https://github.com/piekstra/town-of-jupiter-fl-cli/issues",
+  "license": "MIT",
+  "keywords": [
+    "jupiter",
+    "water",
+    "utility",
+    "bills",
+    "read-only"
+  ],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/tojfl",
+    "mcp_config": {
+      "command": "${__dirname}/server/tojfl",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "TOJFL_USERNAME": "${user_config.username}",
+        "TOJFL_PASSWORD": "${user_config.password}"
+      },
+      "platform_overrides": {
+        "win32": {
+          "command": "${__dirname}/server/tojfl.exe",
+          "args": [
+            "mcp"
+          ],
+          "env": {
+            "TOJFL_USERNAME": "${user_config.username}",
+            "TOJFL_PASSWORD": "${user_config.password}"
+          }
+        },
+        "linux": {
+          "command": "${__dirname}/server/linux/tojfl",
+          "args": [
+            "mcp"
+          ],
+          "env": {
+            "TOJFL_USERNAME": "${user_config.username}",
+            "TOJFL_PASSWORD": "${user_config.password}"
+          }
+        }
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "jupiter_balance",
+      "description": "What you owe the Town of Jupiter now and when it is due."
+    },
+    {
+      "name": "jupiter_bills",
+      "description": "Past utility statements, newest first."
+    },
+    {
+      "name": "jupiter_payments",
+      "description": "Payments from the portal's ledger, newest first, including pending ones."
+    },
+    {
+      "name": "jupiter_usage",
+      "description": "Metered water use by period."
+    }
+  ],
+  "tools_generated": false,
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ]
+  },
+  "user_config": {
+    "username": {
+      "type": "string",
+      "title": "Portal username",
+      "description": "The username you sign in to utilitybill.jupiter.fl.us with.",
+      "required": true
+    },
+    "password": {
+      "type": "string",
+      "title": "Portal password",
+      "description": "The password you sign in to the portal with. Claude Desktop keeps it in its own secure store.",
+      "sensitive": true,
+      "required": true
+    }
+  }
+}

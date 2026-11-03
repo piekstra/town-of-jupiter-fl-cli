@@ -1,0 +1,14 @@
+{
+  "account": {
+    "customer_number": "1234567",
+    "account_number": "123456",
+    "balance": { "cents": 1234 },
+    "due_date": "08/01/2026"
+  },
+  "service": {
+    "last_read_date": "07/01/2026",
+    "last_bill_date": "07/05/2026",
+    "last_payment_date": "06/20/2026"
+  },
+  "enrollment": { "autopay": false }
+}

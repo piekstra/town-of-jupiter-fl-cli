@@ -54,6 +54,8 @@ pub struct Portal {
     /// Cached display username. Behind a `RefCell` so a silent `&self` session
     /// refresh can update it if it re-authenticates as a different user.
     username: RefCell<Option<String>>,
+    /// The username the saved session was made for, as it recorded it.
+    session_username: Option<String>,
     /// Whether a saved session was loaded (cookies seeded) for this base URL.
     /// A cheap, reliable gate: with no session we are definitely logged out,
     /// so we can reject authenticated calls without a network round-trip (and
@@ -100,31 +102,43 @@ fn is_past_due(balance: Option<Money>, due_date: Option<&str>, today: date::Ymd)
     owed && overdue
 }
 
+fn is_another_login(configured: Option<&str>, session: Option<&str>) -> bool {
+    configured
+        .zip(session)
+        .is_some_and(|(c, s)| !c.eq_ignore_ascii_case(s))
+}
+
 impl Portal {
     /// Build a portal handle from config, seeding any saved session cookies so
     /// authenticated calls work immediately if a session is still valid.
     pub fn new(cfg: &Config) -> Result<Portal> {
+        let mut portal = Self::without_session(cfg)?;
+        if let Some(sess) = Session::load()? {
+            if sess.base_url == portal.base_url && !sess.cookies.is_empty() {
+                portal.client.seed_cookies(&sess.cookies);
+                portal.username = RefCell::new(cfg.username.clone().or(sess.username.clone()));
+                portal.session_username = sess.username;
+                portal.has_session = true;
+            }
+        }
+        Ok(portal)
+    }
+
+    /// A handle that ignores any saved session, for signing in as a different
+    /// login: a live cookie would keep the portal from showing the login form.
+    pub fn without_session(cfg: &Config) -> Result<Portal> {
         let base_url = cfg
             .base_url
             .clone()
             .unwrap_or_else(|| pages::BASE_URL.to_string());
         let timeout = Duration::from_secs(cfg.timeout_secs.unwrap_or(30));
         let client = Client::new(&base_url, timeout)?;
-
-        let mut username = cfg.username.clone();
-        let mut has_session = false;
-        if let Some(sess) = Session::load()? {
-            if sess.base_url == base_url && !sess.cookies.is_empty() {
-                client.seed_cookies(&sess.cookies);
-                username = username.or(sess.username);
-                has_session = true;
-            }
-        }
         Ok(Portal {
             client,
             base_url,
-            username: RefCell::new(username),
-            has_session,
+            username: RefCell::new(cfg.username.clone()),
+            session_username: None,
+            has_session: false,
             active_account: cfg.default_account.clone(),
             cfg: cfg.clone(),
         })
@@ -133,6 +147,21 @@ impl Portal {
     /// Base URL this handle talks to.
     pub fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    /// Whether a saved session was found for this base URL when this handle was
+    /// built, whatever its state now.
+    pub fn has_saved_session(&self) -> bool {
+        self.has_session
+    }
+
+    /// Whether the saved session was made for a username other than the
+    /// configured one, so that its cookies would answer as that other login.
+    pub fn session_is_another_login(&self) -> bool {
+        is_another_login(
+            self.cfg.username.as_deref(),
+            self.session_username.as_deref(),
+        )
     }
 
     /// The username associated with the current session/config, if any.
@@ -557,5 +586,30 @@ mod tests {
         assert!(!should_refresh(true, Some(false)));
         assert!(should_refresh(true, Some(true)));
         assert!(!should_refresh(false, Some(true)));
+    }
+}
+
+#[cfg(test)]
+mod portal_tests {
+    use super::*;
+
+    #[test]
+    fn a_session_is_another_logins_only_when_both_names_are_known_and_differ() {
+        assert!(is_another_login(Some("a"), Some("b")));
+        assert!(!is_another_login(Some("a"), Some("A")));
+        assert!(!is_another_login(None, Some("b")));
+        assert!(!is_another_login(Some("a"), None));
+    }
+
+    #[test]
+    fn a_handle_without_a_session_needs_no_network_to_know_it() {
+        let cfg = Config {
+            base_url: Some("http://127.0.0.1:9".into()),
+            ..Config::default()
+        };
+        let portal = Portal::without_session(&cfg).unwrap();
+        assert!(!portal.has_saved_session());
+        assert!(!portal.session_is_another_login());
+        assert!(!portal.is_authenticated().unwrap());
     }
 }

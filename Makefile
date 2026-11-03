@@ -3,7 +3,7 @@
 CARGO ?= cargo
 CLI_PATH := crates/tojfl-cli
 
-.PHONY: all build test lint fmt fmt-check check install clean dev
+.PHONY: all build test lint fmt fmt-check check smoke verify install clean dev
 
 all: check
 
@@ -23,6 +23,16 @@ fmt-check:
 	$(CARGO) fmt --all -- --check
 
 check: fmt-check lint test build
+
+smoke:
+	$(CARGO) build --release -p tojfl-cli
+	./target/release/tojfl --version
+	./target/release/tojfl --help >/dev/null
+	./target/release/tojfl mcp --list-tools >/dev/null
+	@echo "smoke ok"
+
+verify: fmt-check lint test smoke
+	@echo "verify ok"
 
 # `cargo install` ad-hoc signs, which gives the binary a *new* code identity
 # every time. macOS scopes keychain "Always Allow" grants to that identity, so

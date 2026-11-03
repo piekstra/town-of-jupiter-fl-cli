@@ -9,8 +9,10 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-const KEYRING_SERVICE: &str = "tojfl";
-const KEYRING_USER: &str = "portal-password";
+/// The keychain service holding the portal password.
+pub const KEYRING_SERVICE: &str = "tojfl";
+/// The keychain account holding the portal password.
+pub const KEYRING_USER: &str = "portal-password";
 
 /// On-disk configuration (TOML). All fields optional so an empty file works.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

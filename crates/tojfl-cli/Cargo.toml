@@ -26,3 +26,9 @@ pk-cli-selfupdate.workspace = true
 pk-cli-auth.workspace = true
 pk-cli-utility.workspace = true
 pk-cli-documents.workspace = true
+pk-cli-mcp.workspace = true
+pk-cli-secrets.workspace = true
+
+[dev-dependencies]
+# The MCP profile's conformance checks, for the tests only.
+pk-cli-mcp = { workspace = true, features = ["test-util"] }
