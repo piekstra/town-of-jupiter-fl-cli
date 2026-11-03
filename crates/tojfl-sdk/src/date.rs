@@ -142,6 +142,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_month_and_a_year_parse_and_nothing_else_does() {
+        assert_eq!(parse_month_year("Jun 2026"), Some((2026, 6)));
+        assert_eq!(parse_month_year("June 2026"), Some((2026, 6)));
+        assert_eq!(parse_month_year("Jun 26"), None, "a year is four digits");
+        assert_eq!(parse_month_year("Jun 20261"), None, "a year is four digits");
+        assert_eq!(parse_month_year("Jun 2026 extra"), None);
+        assert_eq!(parse_month_year("Summer 2026"), None);
+        assert_eq!(parse_month_year("Jun"), None);
+        assert_eq!(parse_month_year("2026"), None);
+        assert_eq!(parse_month_year(""), None);
+    }
+
+    #[test]
     fn parses_all_portal_and_input_shapes() {
         assert_eq!(parse("2026-07-15"), Some((2026, 7, 15)));
         assert_eq!(parse("07/15/2026"), Some((2026, 7, 15)));
