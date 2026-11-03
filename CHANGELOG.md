@@ -5,7 +5,10 @@
 ### Fixed
 - A `base_url` off `https` is refused, and so is a form action, a bill link or a redirect
   from the portal that leaves `https`. Any of them would have put the password or the
-  session cookies in the clear. Plain `http` to this machine still works.
+  session cookies in the clear. Plain `http` to this machine still works for a
+  `base_url`, not for a redirect from `https`.
+- A form goes only to the portal's own host. A login page naming another host in its
+  form action is refused with exit 5, with the password unsent.
 - Built on cli-common v0.24.0.
 
 ## v0.5.0 — 2026-11-03

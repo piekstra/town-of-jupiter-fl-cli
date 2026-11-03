@@ -50,6 +50,19 @@ fn require_secure_portal_url(url: &Url) -> Result<()> {
     require_secure_url(url.as_str()).map_err(|e| Error::Portal(e.to_string()))
 }
 
+/// Plain `http` to this machine is for a base the user chose. A redirect's target
+/// is the server's choice, so a hop from `https` has to stay on it.
+fn require_secure_hop(current: &Url, next: &Url) -> Result<()> {
+    require_secure_portal_url(next)?;
+    if current.scheme() == "https" && next.scheme() != "https" {
+        return Err(Error::Portal(format!(
+            "refusing a redirect that leaves https ({})",
+            next.origin().ascii_serialization()
+        )));
+    }
+    Ok(())
+}
+
 /// A cookie-aware HTTP client bound to a single portal base URL.
 pub struct Client {
     http: HttpClient,
@@ -203,6 +216,14 @@ impl Client {
     /// cookies. Returns the final response.
     pub fn post_form(&self, path: &str, form: &[(String, String)]) -> Result<Response> {
         let url = self.url(path)?;
+        // The action comes from the page and the body holds the password or the
+        // account numbers, so it goes to the portal and nowhere else.
+        if url.origin() != self.base.origin() {
+            return Err(Error::Portal(format!(
+                "refusing to post a form to {}: it is not the portal",
+                url.origin().ascii_serialization()
+            )));
+        }
         // Safe to retry: the portal's POSTs are idempotent form-postbacks that
         // re-fetch state (login, lookups) — none create a resource, so a replay
         // can't double-submit anything.
@@ -233,20 +254,23 @@ impl Client {
         let next = current
             .join(loc)
             .map_err(|e| Error::parse(format!("bad redirect location `{loc}`: {e}")))?;
-        require_secure_portal_url(&next)?;
+        require_secure_hop(current, &next)?;
         Ok(next)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{backoff_delay, is_transient_status, Client, Error, MAX_ATTEMPTS};
+    use super::{
+        backoff_delay, is_transient_status, require_secure_hop, Client, Error, MAX_ATTEMPTS,
+    };
     use reqwest::StatusCode;
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
+    use url::Url;
 
     /// Spawn a throwaway HTTP server that replies to up to `max_conns`
     /// connections with `status_line`, counting how many it received.
@@ -314,6 +338,27 @@ mod tests {
             assert!(matches!(err, Error::Portal(_)), "{err}");
         }
         assert!(client.url("/Pay").is_ok());
+    }
+
+    #[test]
+    fn a_form_goes_only_to_the_portal() {
+        let client = Client::new("https://portal.invalid", Duration::from_secs(1)).unwrap();
+        for action in [
+            "https://other.invalid/collect",
+            "http://127.0.0.1:8080/Login",
+        ] {
+            let err = client.post_form(action, &[]).unwrap_err();
+            assert!(matches!(err, Error::Portal(_)), "{err}");
+        }
+    }
+
+    #[test]
+    fn a_hop_from_https_stays_on_https_even_to_this_machine() {
+        let https = Url::parse("https://portal.invalid/a").unwrap();
+        let local = Url::parse("http://127.0.0.1:8080/a").unwrap();
+        assert!(require_secure_hop(&https, &local).is_err());
+        assert!(require_secure_hop(&https, &https).is_ok());
+        assert!(require_secure_hop(&local, &local).is_ok());
     }
 
     #[test]
