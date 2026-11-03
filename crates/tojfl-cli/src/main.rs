@@ -15,7 +15,7 @@ use tojfl_sdk::Config;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let json_mode = cli.global.json;
+    let json_mode = cli.global.common.json;
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
@@ -78,7 +78,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
     // setting; `--json` / `--csv` are mutually exclusive at the flag layer.
     let (json, csv) = if cli.global.csv {
         (false, true)
-    } else if cli.global.json {
+    } else if cli.global.common.json {
         (true, false)
     } else {
         match cfg.output.as_deref() {
@@ -91,7 +91,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
     let ctx = Ctx {
         fmt: Format::new(json, csv),
         username: cli.global.username.clone(),
-        verbose: cli.global.verbose,
+        verbose: cli.global.common.verbose,
         cfg,
     };
 
@@ -117,7 +117,9 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Contact => commands::contact(&ctx),
         Command::Open { account } => commands::open(&ctx, account),
         Command::Config(c) => commands::config_cmd(&ctx, c),
-        Command::SelfUpdate(a) => selfupdate::run(a, cli.global.json, cli.global.quiet),
+        Command::SelfUpdate(a) => {
+            selfupdate::run(a, cli.global.common.json, cli.global.common.quiet)
+        }
         Command::Completions { shell } => {
             use clap::CommandFactory;
             clap_complete::generate(*shell, &mut Cli::command(), "tojfl", &mut std::io::stdout());

@@ -44,6 +44,10 @@ fixtures — no network. Public flows (`contact`, `pay quote`) are verified live
 authenticated scrapers are validated against representative markup and should be
 re-checked on a real login.
 
+`crates/tojfl-cli/tests/cli_surface.rs` runs the built `tojfl` binary on
+commands that touch neither the network nor the keychain, with an empty home
+and working directory so no real config or session is read.
+
 ## Releasing
 
 Version lives in `Cargo.toml` (mirrored in `version.txt`). Tag to release:

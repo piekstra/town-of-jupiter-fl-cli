@@ -84,6 +84,9 @@ Unit tests are inline (`#[cfg(test)] mod tests`) and run on representative HTML
 fixtures — no network. `Money`, DNN field extraction, each table parser, and the
 payment helpers are covered. Public flows are additionally exercised against the
 live site by hand (`tojfl contact`, `tojfl pay quote …`).
+`crates/tojfl-cli/tests/cli_surface.rs` runs the built binary on commands that
+touch neither the network nor the keychain, with an empty home and working
+directory.
 
 **Never commit real PII — including in tests or fixtures.** The CLI necessarily
 handles real account numbers, names, addresses, and portal responses *at
