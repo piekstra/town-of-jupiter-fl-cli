@@ -160,25 +160,6 @@ fn an_account_is_named_by_its_address_and_reaches_the_read() {
 }
 
 #[test]
-fn a_page_for_another_account_is_an_error_not_that_accounts_balance() {
-    let t = tools_over(Fixtures::new());
-    let result = call(&t, "jupiter_balance", json!({"account": "234567"}));
-    assert!(result.text().starts_with("upstream:"), "{}", result.text());
-    assert!(
-        result.text().contains("different account"),
-        "{}",
-        result.text()
-    );
-
-    // Leading zeros differ between the portal's pages.
-    let mut portal = Fixtures::new();
-    portal.summary.account.account_number = "0234567".into();
-    let t = tools_over(portal);
-    let out = ok(&t, "jupiter_balance", json!({"account": "234567"}));
-    assert_eq!(out["balance"], "12.34");
-}
-
-#[test]
 fn bills_come_newest_first_with_iso_dates_and_no_paid_state() {
     let t = tools_over(Fixtures::new());
     let page = ok(&t, "jupiter_bills", json!({}));
@@ -351,42 +332,144 @@ fn an_empty_list_of_accounts_is_a_page_this_could_not_read() {
     assert_eq!(out["accounts_unavailable"], true);
 }
 
-mod confirmed_reads {
+mod scoped_reads {
     use super::*;
 
+    /// A portal session: the account it reports, and every selection made of it.
+    struct FakeSession {
+        active: RefCell<Option<String>>,
+        selected: RefCell<Vec<String>>,
+        /// The portal's home page has stopped stating a number.
+        states_number: bool,
+        /// Selecting this account fails.
+        fails_on: Option<&'static str>,
+    }
+
+    impl FakeSession {
+        fn on(account: Option<&str>) -> Self {
+            Self {
+                active: RefCell::new(account.map(str::to_string)),
+                selected: RefCell::default(),
+                states_number: true,
+                fails_on: None,
+            }
+        }
+
+        fn selected(&self) -> Vec<String> {
+            self.selected.borrow().clone()
+        }
+
+        fn active(&self) -> Option<String> {
+            self.active.borrow().clone()
+        }
+    }
+
+    impl ActiveAccount for FakeSession {
+        fn reported(&self) -> Result<Option<String>, SdkError> {
+            Ok(self.active().filter(|_| self.states_number))
+        }
+
+        fn select(&self, account: &str) -> Result<(), SdkError> {
+            self.selected.borrow_mut().push(account.to_string());
+            if self.fails_on == Some(account) {
+                return Err(SdkError::Portal("no".into()));
+            }
+            *self.active.borrow_mut() = Some(account.to_string());
+            Ok(())
+        }
+    }
+
+    fn is_upstream(err: SdkError) -> bool {
+        matches!(cli_error(err), AppError::Upstream(_))
+    }
+
     #[test]
-    fn a_read_stands_when_the_portal_reports_the_same_account() {
-        let read = confirmed("123456", || Ok("rows"), || Ok(Some("0123456".into())));
+    fn the_active_account_is_read_with_no_selection() {
+        // Leading zeros differ between the portal's pages.
+        let session = FakeSession::on(Some("0123456"));
+        let read = scoped(&session, "123456", || Ok("rows"));
+        assert_eq!(read.unwrap(), "rows");
+        assert!(session.selected().is_empty());
+    }
+
+    #[test]
+    fn another_account_is_selected_read_and_selected_back() {
+        let session = FakeSession::on(Some("234567"));
+        let read = scoped(&session, "123456", || {
+            assert_eq!(session.active().as_deref(), Some("123456"));
+            Ok("rows")
+        });
+        assert_eq!(read.unwrap(), "rows");
+        assert_eq!(session.selected(), ["123456", "234567"]);
+        assert_eq!(session.active().as_deref(), Some("234567"));
+    }
+
+    #[test]
+    fn a_session_another_process_moved_is_an_error_and_is_left_where_it_is() {
+        let session = FakeSession::on(Some("234567"));
+        let read: Result<&str, _> = scoped(&session, "123456", || {
+            *session.active.borrow_mut() = Some("345678".into());
+            Ok("rows of another account")
+        });
+        assert!(is_upstream(read.unwrap_err()));
+        assert_eq!(session.selected(), ["123456"]);
+        assert_eq!(session.active().as_deref(), Some("345678"));
+    }
+
+    #[test]
+    fn a_home_page_that_states_no_number_cannot_confirm_a_read() {
+        let mut session = FakeSession::on(Some("123456"));
+        session.states_number = false;
+        let read: Result<&str, _> = scoped(&session, "123456", || Ok("rows"));
+        assert!(is_upstream(read.unwrap_err()));
+    }
+
+    #[test]
+    fn a_session_with_no_account_showing_is_selected_and_stays() {
+        let session = FakeSession::on(None);
+        let read = scoped(&session, "123456", || Ok("rows"));
+        assert_eq!(read.unwrap(), "rows");
+        assert_eq!(session.selected(), ["123456"]);
+    }
+
+    #[test]
+    fn a_failed_read_still_selects_back() {
+        let session = FakeSession::on(Some("234567"));
+        let read: Result<&str, _> = scoped(&session, "123456", || Err(SdkError::NotAuthenticated));
+        assert!(matches!(read, Err(SdkError::NotAuthenticated)));
+        assert_eq!(session.selected(), ["123456", "234567"]);
+    }
+
+    #[test]
+    fn failing_to_select_back_does_not_cost_the_read() {
+        let mut session = FakeSession::on(Some("234567"));
+        session.fails_on = Some("234567");
+        let read = scoped(&session, "123456", || Ok("rows"));
         assert_eq!(read.unwrap(), "rows");
     }
 
     #[test]
-    fn a_read_stands_when_the_page_states_no_number() {
-        assert_eq!(
-            confirmed("123456", || Ok("rows"), || Ok(None)).unwrap(),
-            "rows"
-        );
+    fn failing_to_select_the_account_reads_nothing() {
+        let mut session = FakeSession::on(Some("234567"));
+        session.fails_on = Some("123456");
+        let read: Result<&str, _> = scoped(&session, "123456", || panic!("read anyway"));
+        assert!(read.is_err());
     }
 
     #[test]
-    fn another_account_is_an_upstream_error_not_its_rows() {
-        let err = confirmed("123456", || Ok("rows"), || Ok(Some("234567".into()))).unwrap_err();
-        assert!(matches!(cli_error(err), AppError::Upstream(_)));
-    }
-
-    #[test]
-    fn a_failed_read_asks_nothing_further() {
-        let asked = Cell::new(false);
-        let read: Result<&str, _> = confirmed(
-            "123456",
-            || Err(SdkError::NotAuthenticated),
-            || {
-                asked.set(true);
-                Ok(None)
-            },
-        );
-        assert!(matches!(read, Err(SdkError::NotAuthenticated)));
-        assert!(!asked.get());
+    fn a_not_linked_error_holds_the_linked_numbers_back() {
+        let err = without_numbers(SdkError::NotFound(
+            "account 999999 is not linked to this login (linked: 123456, 234567)".into(),
+        ));
+        let text = err.to_string();
+        assert!(text.contains("default_account"), "{text}");
+        for number in ["999999", "123456", "234567"] {
+            assert!(!text.contains(number), "{text}");
+        }
+        assert!(matches!(
+            without_numbers(SdkError::Portal("kept".into())),
+            SdkError::Portal(_)
+        ));
     }
 }
 

@@ -387,7 +387,8 @@ impl Portal {
     // Fetch helpers assume the caller already ran `ready()`, so `summary()` can
     // compose several without repeating the auth/account-activation round-trips.
     /// The account number the portal now reports, without selecting one first.
-    /// `None` when the page does not state it.
+    /// `None` when the page does not state it, as the login page a lapsed session
+    /// lands on does not.
     pub fn reported_account(&self) -> Result<Option<String>> {
         let number = self.fetch_account()?.account_number;
         Ok((!number.trim().is_empty()).then_some(number))

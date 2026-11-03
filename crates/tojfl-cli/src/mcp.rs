@@ -16,8 +16,8 @@
 //!
 //! Which account the portal reports is state on the session, which commands and
 //! other servers share through the session file. So every read names its account,
-//! and a list, which does not say whose it is, is checked against the account the
-//! portal then reports.
+//! is checked against the account the portal then reports, and leaves the session
+//! on the account it found ([`scoped`]).
 //!
 //! The commands' mappers are best-effort, for a person who can see the page. A
 //! tool's answer goes to a model as fact, so here an answer the portal did not
@@ -34,6 +34,7 @@ use pk_cli_mcp::Server;
 use pk_cli_secrets::{CredentialStore, KeychainRead, Secret, SecretResolver, SecretSpec};
 use pk_cli_utility::mcp::{UtilityAccount, UtilitySource, UtilityTools};
 use pk_cli_utility::{Payment, Statement, UsagePeriod, UtilitySummary};
+use tojfl_sdk::accounts::same_number;
 use tojfl_sdk::{
     config, Bill, Config, Error as SdkError, LinkedAccount, Money, Portal, ServiceInfo, Summary,
     Transaction, UsageRecord,
@@ -206,7 +207,7 @@ fn cli_error(e: SdkError) -> AppError {
 }
 
 impl LivePortal {
-    fn config(&self, account: Option<&str>) -> Result<Config, SdkError> {
+    fn config(&self) -> Result<Config, SdkError> {
         let mut cfg = match &self.config_path {
             Some(path) => Config::load_from(Path::new(path))?,
             None => Config::load_default()?,
@@ -217,8 +218,8 @@ impl LivePortal {
         if self.base_url.is_some() {
             cfg.base_url.clone_from(&self.base_url);
         }
-        if let Some(account) = account.map(str::to_string).or_else(|| self.account.clone()) {
-            cfg.default_account = Some(account);
+        if self.account.is_some() {
+            cfg.default_account.clone_from(&self.account);
         }
         // Commands treat a blank in the file as a value; here it would only be
         // a confusing error from the portal.
@@ -232,17 +233,15 @@ impl LivePortal {
         Ok(cfg)
     }
 
-    fn read<T>(
-        &self,
-        account: Option<&str>,
-        op: impl Fn(&Portal) -> Result<T, SdkError>,
-    ) -> Result<T, AppError> {
+    fn read<T>(&self, op: impl Fn(&Portal) -> Result<T, SdkError>) -> Result<T, AppError> {
         let mut refused = self.refused.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut cfg = self.config(account).map_err(cli_error)?;
+        let mut cfg = self.config().map_err(cli_error)?;
         let auto_login = cfg.auto_login;
         // Off in the SDK, so the one sign-in is the one below, which remembers a
         // refusal.
         cfg.auto_login = Some(false);
+        // Also off: `scoped` selects, only when it has to, and selects back.
+        cfg.default_account = None;
         let mut portal = Portal::new(&cfg).map_err(cli_error)?;
         let had_session = portal.has_saved_session();
         // The username was changed since the session was saved, as the settings
@@ -275,70 +274,115 @@ impl LivePortal {
     }
 }
 
-const ANOTHER_ACCOUNT: &str = "the portal reported a different account from the one asked for";
-
-/// Numbers differ only in leading zeros between the portal's pages.
-fn same_account(asked: &str, reported: &str) -> bool {
-    asked.trim_start_matches('0') == reported.trim_start_matches('0')
+/// What [`scoped`] needs of a portal session.
+trait ActiveAccount {
+    /// The account the portal now reports; `None` when the page states none.
+    fn reported(&self) -> Result<Option<String>, SdkError>;
+    fn select(&self, account: &str) -> Result<(), SdkError>;
 }
 
-/// `read`, unless the portal then reports another account. A page that states no
-/// number has nothing to check against.
-fn confirmed<T>(
-    asked: &str,
+impl ActiveAccount for Portal {
+    fn reported(&self) -> Result<Option<String>, SdkError> {
+        self.reported_account()
+    }
+
+    fn select(&self, account: &str) -> Result<(), SdkError> {
+        self.select_account(account).map_err(without_numbers)
+    }
+}
+
+/// The SDK's "not linked" error lists every linked number, which is for a person at
+/// a terminal. Concise output holds them back, and a default in the config, the one
+/// way here to an unlinked account, is no reason to send them.
+fn without_numbers(e: SdkError) -> SdkError {
+    match e {
+        SdkError::NotFound(_) => SdkError::NotFound(
+            "the account asked for is not linked to this login; a default comes from \
+             `default_account` in the config or --account"
+                .into(),
+        ),
+        other => other,
+    }
+}
+
+/// `read` with `account` active. It selects only when the portal is on another
+/// account, confirms afterwards that the portal still reports this one, and selects
+/// the account it found again, which commands with no `--account` go on reading. A
+/// session that moved during the read is another process's choice, so it stays.
+fn scoped<T>(
+    session: &impl ActiveAccount,
+    account: &str,
     read: impl FnOnce() -> Result<T, SdkError>,
-    reported: impl FnOnce() -> Result<Option<String>, SdkError>,
 ) -> Result<T, SdkError> {
-    let value = read()?;
-    match reported()? {
-        Some(reported) if !same_account(asked, &reported) => {
-            Err(SdkError::Portal(ANOTHER_ACCOUNT.into()))
+    let found = session.reported()?;
+    let on_it = found.as_deref().is_some_and(|f| same_number(account, f));
+    if !on_it {
+        session.select(account)?;
+    }
+    let restore = || {
+        if let Some(found) = found.as_deref().filter(|_| !on_it) {
+            if session.select(found).is_err() {
+                eprintln!("warning: could not return the portal session to the account it was on");
+            }
         }
-        _ => Ok(value),
+    };
+    let value = read().inspect_err(|_| restore())?;
+    match session.reported().inspect_err(|_| restore())? {
+        Some(reported) if same_number(account, &reported) => {
+            restore();
+            Ok(value)
+        }
+        Some(_) => Err(SdkError::Portal(
+            "the portal reported a different account from the one asked for".into(),
+        )),
+        None => {
+            restore();
+            Err(SdkError::Portal(
+                "the portal's home page did not state an account number, so this read cannot be \
+                 confirmed as the account asked for"
+                    .into(),
+            ))
+        }
     }
 }
 
 impl LivePortal {
-    fn read_confirmed<T>(
+    fn read_account<T>(
         &self,
         account: &str,
         op: impl Fn(&Portal) -> Result<T, SdkError>,
     ) -> Result<T, AppError> {
-        self.read(Some(account), |portal| {
-            confirmed(account, || op(portal), || portal.reported_account())
-        })
+        self.read(|portal| scoped(portal, account, || op(portal)))
     }
 }
 
 impl Reads for LivePortal {
     fn default_account(&self) -> Result<Option<String>, AppError> {
-        Ok(self.config(None).map_err(cli_error)?.default_account)
+        Ok(self.config().map_err(cli_error)?.default_account)
     }
 
     fn accounts(&self) -> Result<Vec<LinkedAccount>, AppError> {
-        self.read(None, Portal::list_accounts)
+        self.read(Portal::list_accounts)
     }
 
-    // The account page says whose it is, and `JupiterSource::summary` checks that.
     fn summary(&self, account: &str) -> Result<Summary, AppError> {
-        self.read(Some(account), Portal::summary)
+        self.read_account(account, Portal::summary)
     }
 
-    // Only ever decides whether an empty list is an error.
     fn service(&self, account: &str) -> Result<ServiceInfo, AppError> {
-        self.read(Some(account), Portal::service_info)
+        self.read_account(account, Portal::service_info)
     }
 
     fn bills(&self, account: &str) -> Result<Vec<Bill>, AppError> {
-        self.read_confirmed(account, Portal::bills)
+        self.read_account(account, Portal::bills)
     }
 
     fn transactions(&self, account: &str) -> Result<Vec<Transaction>, AppError> {
-        self.read_confirmed(account, Portal::transactions)
+        self.read_account(account, Portal::transactions)
     }
 
     fn usage(&self, account: &str) -> Result<Vec<UsageRecord>, AppError> {
-        self.read_confirmed(account, Portal::usage)
+        self.read_account(account, Portal::usage)
     }
 }
 
@@ -450,12 +494,6 @@ impl<R: Reads> UtilitySource for JupiterSource<R> {
         let summary = self.portal.summary(&account)?;
         if summary.account.balance.is_none() {
             return Err(shape_error("account page"));
-        }
-        // Another `tojfl` can change the session's account between selecting and
-        // reading.
-        let reported = summary.account.account_number.trim();
-        if !reported.is_empty() && !same_account(&account, reported) {
-            return Err(AppError::Upstream(ANOTHER_ACCOUNT.into()));
         }
         Ok(commands::summary_dto(&summary))
     }

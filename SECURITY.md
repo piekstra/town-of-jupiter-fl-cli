@@ -41,9 +41,13 @@ Starting the server again sends it once more. A session saved for a different us
 from the configured one is not used: the server signs in as the configured one, which
 replaces it.
 
-Which account the portal reports is state on that shared session. Every call selects
-its account first, and if another process has switched it by the time the read is done,
-the tool answers with an error rather than another account's rows.
+Which account the portal reports is state on that shared session, and no tool result
+says whose it is. So a call for another account selects it, reads, checks that the portal
+still reports it, and selects the account it found again, which commands with no
+`--account` go on reading. If another process switched the account during the read, or
+the home page states no account number to check, the tool answers with an error rather
+than rows it cannot confirm. A command run in the moments a call is on another account
+can see that account.
 
 The Claude Desktop extension (`.mcpb`) holds the username and password in Claude
 Desktop's secure store (`user_config`, the password `sensitive`) and passes them to its
