@@ -10,7 +10,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     /// The HTTP layer failed (DNS, TLS, timeout, connection reset, ...).
     #[error("network error: {0}")]
-    Http(#[from] reqwest::Error),
+    Http(#[source] reqwest::Error),
 
     /// We reached the portal but authentication was rejected.
     #[error("authentication failed: {0}")]
@@ -56,6 +56,14 @@ pub enum Error {
     /// A requested resource doesn't exist (unknown account, missing statement).
     #[error("not found: {0}")]
     NotFound(String),
+}
+
+/// reqwest's own message quotes the whole URL, and a statement link's query holds
+/// an account-specific token (docs/portal.md), so the URL is dropped here.
+impl From<reqwest::Error> for Error {
+    fn from(e: reqwest::Error) -> Self {
+        Error::Http(e.without_url())
+    }
 }
 
 impl Error {

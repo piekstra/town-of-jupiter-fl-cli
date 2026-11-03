@@ -174,7 +174,7 @@ impl Client {
                     // error-page body as if it were the requested content.
                     if is_transient_status(resp.status()) {
                         // A transient status is always >= 400, so this errors.
-                        return resp.error_for_status().map_err(Error::Http);
+                        return resp.error_for_status().map_err(Error::from);
                     }
                     return Ok(resp);
                 }
@@ -338,6 +338,23 @@ mod tests {
             assert!(matches!(err, Error::Portal(_)), "{err}");
         }
         assert!(client.url("/Pay").is_ok());
+    }
+
+    #[test]
+    fn a_network_failure_does_not_print_the_statement_link() {
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let base = format!("http://127.0.0.1:{port}");
+        let client = Client::new(&base, Duration::from_secs(1)).unwrap();
+        let err = client.get("/Bill.aspx?BH=dummy-token").unwrap_err();
+        assert!(matches!(err, Error::Http(_)), "{err}");
+        let message = err.to_string();
+        for leak in ["Bill.aspx", "dummy-token"] {
+            assert!(!message.contains(leak), "{message}");
+        }
     }
 
     #[test]
