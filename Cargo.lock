@@ -1864,8 +1864,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-auth"
-version = "0.21.0"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.21.0#d7307663c1f593229f5709efbe4afd84fa1d875e"
+version = "0.24.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.24.0#2391123d213f0beaf7bec2ad2c18539dc6a54051"
 dependencies = [
  "clap",
  "pk-cli-core",
@@ -1876,8 +1876,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-core"
-version = "0.21.0"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.21.0#d7307663c1f593229f5709efbe4afd84fa1d875e"
+version = "0.24.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.24.0#2391123d213f0beaf7bec2ad2c18539dc6a54051"
 dependencies = [
  "clap",
  "libc",
@@ -1887,8 +1887,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-documents"
-version = "0.21.0"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.21.0#d7307663c1f593229f5709efbe4afd84fa1d875e"
+version = "0.24.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.24.0#2391123d213f0beaf7bec2ad2c18539dc6a54051"
 dependencies = [
  "pk-cli-core",
  "serde",
@@ -1897,8 +1897,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-mcp"
-version = "0.21.0"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.21.0#d7307663c1f593229f5709efbe4afd84fa1d875e"
+version = "0.24.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.24.0#2391123d213f0beaf7bec2ad2c18539dc6a54051"
 dependencies = [
  "bytes",
  "clap",
@@ -1918,8 +1918,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-secrets"
-version = "0.21.0"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.21.0#d7307663c1f593229f5709efbe4afd84fa1d875e"
+version = "0.24.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.24.0#2391123d213f0beaf7bec2ad2c18539dc6a54051"
 dependencies = [
  "clap",
  "keyring",
@@ -1932,8 +1932,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-selfupdate"
-version = "0.21.0"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.21.0#d7307663c1f593229f5709efbe4afd84fa1d875e"
+version = "0.24.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.24.0#2391123d213f0beaf7bec2ad2c18539dc6a54051"
 dependencies = [
  "clap",
  "flate2",
@@ -1946,8 +1946,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-utility"
-version = "0.21.0"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.21.0#d7307663c1f593229f5709efbe4afd84fa1d875e"
+version = "0.24.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.24.0#2391123d213f0beaf7bec2ad2c18539dc6a54051"
 dependencies = [
  "clap",
  "pk-cli-core",
@@ -2859,7 +2859,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -2983,7 +2983,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tojfl-cli"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3004,11 +3004,12 @@ dependencies = [
 
 [[package]]
 name = "tojfl-sdk"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "chrono",
  "directories",
  "keyring",
+ "pk-cli-core",
  "regex",
  "reqwest",
  "scraper",

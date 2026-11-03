@@ -6,6 +6,7 @@
 //! cookie during login, and we need to capture it to persist the session.
 
 use crate::error::{Error, Result};
+use pk_cli_core::transport::require_secure_url;
 use reqwest::blocking::{Client as HttpClient, Response};
 use reqwest::cookie::Jar;
 use reqwest::header::{HeaderMap, HeaderValue, LOCATION, SET_COOKIE, USER_AGENT};
@@ -43,6 +44,12 @@ fn backoff_delay(attempt: u32) -> Duration {
     RETRY_BASE * 2u32.pow(attempt.min(6).saturating_sub(1))
 }
 
+/// A form action, a bill link and a redirect target all come from the portal's
+/// response, and the cookie jar and on login the password go with the request.
+fn require_secure_portal_url(url: &Url) -> Result<()> {
+    require_secure_url(url.as_str()).map_err(|e| Error::Portal(e.to_string()))
+}
+
 /// A cookie-aware HTTP client bound to a single portal base URL.
 pub struct Client {
     http: HttpClient,
@@ -57,6 +64,8 @@ impl Client {
     pub fn new(base_url: &str, timeout: Duration) -> Result<Client> {
         let base = Url::parse(base_url)
             .map_err(|e| Error::Config(format!("invalid base url `{base_url}`: {e}")))?;
+        // The password and the session cookies go to this host.
+        require_secure_url(base.as_str()).map_err(|e| Error::Config(e.to_string()))?;
         let jar = Arc::new(Jar::default());
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static(UA));
@@ -80,13 +89,15 @@ impl Client {
 
     /// Resolve a path (or absolute URL) against the base.
     pub fn url(&self, path: &str) -> Result<Url> {
-        if path.starts_with("http://") || path.starts_with("https://") {
-            Url::parse(path).map_err(|e| Error::invalid(format!("bad url `{path}`: {e}")))
+        let url = if path.starts_with("http://") || path.starts_with("https://") {
+            Url::parse(path).map_err(|e| Error::invalid(format!("bad url `{path}`: {e}")))?
         } else {
             self.base
                 .join(path)
-                .map_err(|e| Error::invalid(format!("bad path `{path}`: {e}")))
-        }
+                .map_err(|e| Error::invalid(format!("bad path `{path}`: {e}")))?
+        };
+        require_secure_portal_url(&url)?;
+        Ok(url)
     }
 
     /// Seed the jar and persistence map from previously saved cookie strings.
@@ -219,9 +230,11 @@ impl Client {
             .get(LOCATION)
             .and_then(|v| v.to_str().ok())
             .ok_or_else(|| Error::parse("redirect response had no Location header"))?;
-        current
+        let next = current
             .join(loc)
-            .map_err(|e| Error::parse(format!("bad redirect location `{loc}`: {e}")))
+            .map_err(|e| Error::parse(format!("bad redirect location `{loc}`: {e}")))?;
+        require_secure_portal_url(&next)?;
+        Ok(next)
     }
 }
 
@@ -260,6 +273,56 @@ mod tests {
             }
         });
         (format!("http://{addr}"), count)
+    }
+
+    /// One connection answered with a 302 to `location`.
+    fn spawn_redirect_server(location: &'static str) -> (String, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let count = Arc::new(AtomicUsize::new(0));
+        let seen = count.clone();
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            seen.fetch_add(1, Ordering::SeqCst);
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let resp = format!(
+                "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            let _ = stream.write_all(resp.as_bytes());
+        });
+        (format!("http://{addr}"), count)
+    }
+
+    #[test]
+    fn a_base_url_off_https_is_refused() {
+        let err = Client::new("http://portal.invalid", Duration::from_secs(1))
+            .err()
+            .expect("refused");
+        assert!(matches!(err, Error::Config(_)), "{err}");
+        assert!(err.to_string().contains("only https is allowed"), "{err}");
+        assert!(Client::new("http://127.0.0.1:9", Duration::from_secs(1)).is_ok());
+    }
+
+    #[test]
+    fn a_form_action_or_bill_link_off_https_is_refused_before_anything_is_sent() {
+        let client = Client::new("https://portal.invalid", Duration::from_secs(1)).unwrap();
+        for url in ["http://portal.invalid/Pay", "HTTP://portal.invalid/Pay"] {
+            let err = client.url(url).unwrap_err();
+            assert!(matches!(err, Error::Portal(_)), "{err}");
+        }
+        assert!(client.url("/Pay").is_ok());
+    }
+
+    #[test]
+    fn a_redirect_off_https_is_refused_before_the_next_hop() {
+        let (base, count) = spawn_redirect_server("http://portal.invalid/Next");
+        let client = Client::new(&base, Duration::from_secs(5)).unwrap();
+        let err = client.get("/start").unwrap_err();
+        assert!(matches!(err, Error::Portal(_)), "{err}");
+        assert_eq!(count.load(Ordering::SeqCst), 1);
     }
 
     #[test]

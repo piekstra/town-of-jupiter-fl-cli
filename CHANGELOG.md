@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.5.1 — 2026-11-03
+
+### Fixed
+- A `base_url` off `https` is refused, and so is a form action, a bill link or a redirect
+  from the portal that leaves `https`. Any of them would have put the password or the
+  session cookies in the clear. Plain `http` to this machine still works.
+- Built on cli-common v0.24.0.
+
 ## v0.5.0 — 2026-11-03
 
 ### Added
