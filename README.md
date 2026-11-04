@@ -181,7 +181,8 @@ by design — see below.
 `tojfl mcp` serves four read-only tools to Claude over MCP: `jupiter_balance`,
 `jupiter_bills`, `jupiter_payments` and `jupiter_usage`. Nothing can make a payment or
 change your account. Payments come from the portal's ledger and may be marked pending.
-A statement's paid state is not reported. The server reads its settings from the OS
+A statement's paid state is not reported. In `jupiter_bills` a bill's `id` is its date, which two
+bills on one date share, and is not the number `bills get` takes. The server reads its settings from the OS
 config path or `--config`, never from a `./tojfl.toml`.
 
 On a login with several accounts, a call that names none reads the default, or else the

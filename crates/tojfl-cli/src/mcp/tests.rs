@@ -195,6 +195,29 @@ fn a_bill_keeps_its_id_when_a_newer_one_arrives() {
     assert_eq!(id_of(Fixtures::new()), id_of(after));
 }
 
+/// The portal's grid has no bill id, so two bills on one date share one, and a position tells them
+/// apart by counting those it has passed.
+#[test]
+fn two_bills_on_one_date_are_each_seen_once_across_pages() {
+    let mut fixtures = Fixtures::new();
+    let mut twin = fixtures.bills[0].clone();
+    twin.amount = fixtures.bills[1].amount;
+    fixtures.bills.insert(1, twin);
+    let t = tools_over(fixtures);
+    let whole = ok(&t, "jupiter_bills", json!({"limit": 100}));
+    let mut paged = Vec::new();
+    let mut args = json!({"limit": 1});
+    loop {
+        let page = ok(&t, "jupiter_bills", args.clone());
+        paged.extend(page["items"].as_array().unwrap().iter().cloned());
+        if !page["next_cursor"].is_string() {
+            break;
+        }
+        args["cursor"] = page["next_cursor"].clone();
+    }
+    assert_eq!(&paged, whole["items"].as_array().unwrap());
+}
+
 #[test]
 fn payments_are_credits_the_portal_calls_payments_as_positive_amounts() {
     let t = tools_over(Fixtures::new());
