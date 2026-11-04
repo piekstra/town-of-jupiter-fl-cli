@@ -174,6 +174,27 @@ fn bills_come_newest_first_with_iso_dates_and_no_paid_state() {
     assert_eq!(page["returned"], 2);
 }
 
+/// `bills get <N>` counts from the newest bill, and a position holds the tool's id, so a bill
+/// arriving between pages must not move the ones already there.
+#[test]
+fn a_bill_keeps_its_id_when_a_newer_one_arrives() {
+    let id_of = |fixtures: Fixtures| {
+        let page = ok(
+            &tools_over(fixtures),
+            "jupiter_bills",
+            json!({"response_format": "detailed"}),
+        );
+        let items = page["items"].as_array().unwrap().clone();
+        let bill = items.iter().find(|i| i["date"] == "2026-03-05").unwrap();
+        bill["id"].clone()
+    };
+    let mut after = Fixtures::new();
+    let mut newer = after.bills[0].clone();
+    newer.date = "09/05/2026".into();
+    after.bills.insert(0, newer);
+    assert_eq!(id_of(Fixtures::new()), id_of(after));
+}
+
 #[test]
 fn payments_are_credits_the_portal_calls_payments_as_positive_amounts() {
     let t = tools_over(Fixtures::new());

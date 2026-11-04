@@ -173,6 +173,15 @@ fn logout_json(forget: bool, token_removed: bool) -> serde_json::Value {
     })
 }
 
+/// The note a forget owes once the delete has answered, item or no item: a server on the variable
+/// never had an item to remove.
+fn note_owed(token: &std::result::Result<bool, pk_cli_core::CliError>) -> Option<String> {
+    token
+        .as_ref()
+        .ok()
+        .map(|removed| pk_cli_mcp::forget_note("tojfl", *removed))
+}
+
 /// Whether `auth logout --forget` removed a connector token. Nothing records whether `mcp
 /// --new-token` ran, so the delete is ungated. Every step is attempted and every failure reported
 /// here: none hides another, or the note that a removed token still needs, since a rerun finds no
@@ -182,8 +191,8 @@ fn finish_forget<E: std::fmt::Display>(
     token: std::result::Result<bool, pk_cli_core::CliError>,
     password: std::result::Result<(), E>,
 ) -> Result<bool> {
-    if matches!(token, Ok(true)) {
-        eprintln!("{}", pk_cli_mcp::stop_note("tojfl"));
+    if let Some(note) = note_owed(&token) {
+        eprintln!("{note}");
     }
     match (session, token, password) {
         (Ok(()), Ok(removed), Ok(())) => Ok(removed),
@@ -1782,6 +1791,18 @@ mod tests {
         // Unknown key is a usage error.
         assert!(apply_config_key(&mut cfg, "password", Some("x")).is_err());
         assert!(apply_config_key(&mut cfg, "nope", Some("x")).is_err());
+    }
+
+    #[test]
+    fn a_forget_owes_the_note_whatever_the_keychain_held() {
+        use pk_cli_core::CliError;
+        let removed = super::note_owed(&Ok(true)).unwrap();
+        assert!(removed.contains("keeps accepting the token"), "{removed}");
+        let none = super::note_owed(&Ok(false)).unwrap();
+        assert!(none.contains("held no"), "{none}");
+        assert!(none.contains("$TOJFL_MCP_TOKEN"), "{none}");
+        let denied = Err(CliError::Keychain("denied".into()));
+        assert_eq!(super::note_owed(&denied), None);
     }
 
     #[test]
