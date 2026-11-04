@@ -152,7 +152,8 @@ pub enum AuthCmd {
     Login(LoginArgs),
     /// Clear the saved session (and optionally the stored password).
     Logout {
-        /// Also remove the password from the OS keychain.
+        /// Also remove the password and the `mcp --http` connector token from the OS keychain. A
+        /// running server keeps the token it started with.
         #[arg(long)]
         forget: bool,
     },
