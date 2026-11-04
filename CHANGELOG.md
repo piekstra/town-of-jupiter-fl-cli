@@ -4,7 +4,7 @@
 
 - `auth logout --forget` also removes the connector token `mcp-http-token`, and says what that
   does not end: a running `tojfl mcp --http` keeps the token it started with. Its `--json` answer
-  gains `connector_token_removed`.
+  gains `connector_token_removed`. Every step of a forget is attempted, and every failure reported.
 - cli-common v0.27.0, up from v0.24.0.
 
 ## v0.5.1 — 2026-11-03
