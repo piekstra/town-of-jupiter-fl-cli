@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "tojfl",
   "display_name": "Town of Jupiter Utilities (tojfl)",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Read-only access to your own Town of Jupiter, FL utility balance, statements, payments and water use, through the open-source tojfl CLI.",
   "long_description": "Ask Claude about your Town of Jupiter utility account: what you owe and when it is due, what past statements came to, which payments posted, and how much water you used. Four read-only tools, jupiter_balance, jupiter_bills, jupiter_payments and jupiter_usage; nothing can make a payment or change your account. Your portal username and password stay on your computer: Claude Desktop keeps them in its own secure store and passes them to the bundled tojfl binary, which signs in to the town's portal directly. What the tools return (balance, statements, payments, usage, service address) goes to Claude as part of your conversation. Unofficial; not affiliated with the Town of Jupiter.",
   "author": {
