@@ -162,4 +162,14 @@ mod tests {
         assert_eq!(code(E::Portal("rejected".into())), 5);
         assert_eq!(code(E::Keychain("locked".into())), 1);
     }
+
+    /// The exit code is a frozen contract, and an error's detail is not part of it.
+    #[test]
+    fn a_detailed_family_error_keeps_its_exit_code_and_message() {
+        use pk_cli_core::{CliError, Reason};
+        let detailed = CliError::Auth("dummy refusal".into()).because(Reason::Forbidden);
+        let rekeyed = super::rekey(&detailed);
+        assert_eq!(rekeyed.exit_code(), detailed.exit_code());
+        assert_eq!(rekeyed.message(), "dummy refusal");
+    }
 }

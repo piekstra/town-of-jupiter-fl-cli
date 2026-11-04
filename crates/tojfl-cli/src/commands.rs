@@ -140,25 +140,16 @@ fn auth_login(ctx: &Ctx, args: &LoginArgs) -> Result<()> {
 fn auth_logout(ctx: &Ctx, forget: bool) -> Result<()> {
     let portal = ctx.portal()?;
     portal.logout().context("clearing session")?;
-    let token = forget.then(|| {
-        pk_cli_secrets::CredentialStore::for_binary("tojfl")
-            .delete(pk_cli_mcp::HTTP_TOKEN_ACCOUNT)
-            .map_err(|e| anyhow!("{}", e.message()))
-    });
-    if forget {
-        config::keychain_clear().context("clearing keychain password")?;
-    }
-    // Before anything is printed, so a failure is the one JSON document of this call.
-    let token_removed = match token {
-        Some(token) => finish_forget(token)?,
-        None => false,
+    let token_removed = if forget {
+        let token = pk_cli_secrets::CredentialStore::for_binary("tojfl")
+            .delete(pk_cli_mcp::HTTP_TOKEN_ACCOUNT);
+        // Before anything is printed, so a failure is the one JSON document of this call.
+        finish_forget(token, config::keychain_clear())?
+    } else {
+        false
     };
     if ctx.fmt.json {
-        ctx.fmt.print_json(&serde_json::json!({
-            "status": "ok",
-            "forgot_password": forget,
-            "connector_token_removed": token_removed,
-        }))?;
+        ctx.fmt.print_json(&logout_json(forget, token_removed))?;
     } else {
         println!(
             "✓ Session cleared.{}",
@@ -175,14 +166,36 @@ fn auth_logout(ctx: &Ctx, forget: bool) -> Result<()> {
     Ok(())
 }
 
+fn logout_json(forget: bool, token_removed: bool) -> serde_json::Value {
+    serde_json::json!({
+        "status": "ok",
+        "forgot_password": forget,
+        "connector_token_removed": token_removed,
+    })
+}
+
 /// Whether `auth logout --forget` removed a connector token. Nothing records whether `mcp
-/// --new-token` ran, so the delete is ungated, and one that could not be removed is an error,
-/// since it still opens the connector.
-fn finish_forget(token: Result<bool>) -> Result<bool> {
-    token.context(
-        "the connector token of `tojfl mcp --http` could not be removed, if there is one, and \
-         would still open the connector. Run `tojfl auth logout --forget` again",
-    )
+/// --new-token` ran, so the delete is ungated, and it and the password's are both attempted:
+/// neither failure hides the other, and a failed token is a keychain failure like the password's.
+fn finish_forget<E: std::fmt::Display>(
+    token: std::result::Result<bool, pk_cli_core::CliError>,
+    password: std::result::Result<(), E>,
+) -> Result<bool> {
+    let password = password.map_err(|e| format!("clearing keychain password: {e}"));
+    match (token, password) {
+        (Err(failure), password) => Err(pk_cli_core::CliError::Keychain(format!(
+            "the connector token of `tojfl mcp --http` could not be removed ({}) and would still \
+             open the connector{}; run `tojfl auth logout --forget` again",
+            failure.message(),
+            password
+                .err()
+                .map(|e| format!(", and {e}"))
+                .unwrap_or_default(),
+        ))
+        .into()),
+        (Ok(_), Err(e)) => Err(pk_cli_core::CliError::Keychain(e).into()),
+        (Ok(removed), Ok(())) => Ok(removed),
+    }
 }
 
 fn auth_status(ctx: &Ctx) -> Result<()> {
@@ -1758,13 +1771,40 @@ mod tests {
     }
 
     #[test]
-    fn a_forget_that_could_not_remove_the_connector_token_says_so() {
-        let says = format!(
-            "{:#}",
-            super::finish_forget(Err(anyhow::anyhow!("denied"))).unwrap_err()
-        );
+    fn a_forget_that_could_not_remove_the_connector_token_is_a_keychain_failure() {
+        use pk_cli_core::CliError;
+        let denied = Err(CliError::Keychain("denied".into()));
+        let e = super::finish_forget::<String>(denied, Ok(())).unwrap_err();
+        let family = e.downcast_ref::<CliError>().expect("a family error");
+        assert!(matches!(family, CliError::Keychain(_)), "{family}");
+        let says = family.to_string();
         assert!(says.contains("connector token"), "{says}");
         assert!(says.contains("`tojfl auth logout --forget`"), "{says}");
         assert!(says.contains("denied"), "{says}");
+    }
+
+    #[test]
+    fn neither_failure_of_a_forget_hides_the_other() {
+        use pk_cli_core::CliError;
+        let says = super::finish_forget(
+            Err(CliError::Keychain("denied".into())),
+            Err("locked".to_string()),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(says.contains("denied") && says.contains("locked"), "{says}");
+        let says = super::finish_forget(Ok(true), Err("locked".to_string()))
+            .unwrap_err()
+            .to_string();
+        assert!(says.contains("locked"), "{says}");
+    }
+
+    #[test]
+    fn a_forget_says_whether_it_removed_a_token() {
+        assert!(super::finish_forget::<String>(Ok(true), Ok(())).unwrap());
+        assert!(!super::finish_forget::<String>(Ok(false), Ok(())).unwrap());
+        let json = super::logout_json(true, true);
+        assert_eq!(json["connector_token_removed"], true);
+        assert_eq!(super::logout_json(false, false)["forgot_password"], false);
     }
 }
