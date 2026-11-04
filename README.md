@@ -98,7 +98,7 @@ password from the keychain if present; pipe one explicitly with
 | Command | What it does |
 | --- | --- |
 | `tojfl auth login [--save] [--password-stdin]` | Authenticate and cache a session |
-| `tojfl auth logout [--forget]` | Clear the session (and optionally the keychain password) |
+| `tojfl auth logout [--forget]` | Clear the session (and optionally the stored password and connector token) |
 | `tojfl auth status` | Report whether a valid session exists |
 | `tojfl summary` | At-a-glance overview: balance, due, last read/bill/payment, paperless + autopay |
 | `tojfl snapshot [--all-accounts]` | One-call dashboard payload: account name + service address, balance (plus pending payments / effective balance), due/past-due, last payment, usage stats, ledger totals (best with `--json`; `--all-accounts` returns one per linked account) |
