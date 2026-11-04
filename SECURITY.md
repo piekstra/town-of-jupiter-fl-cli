@@ -79,8 +79,10 @@ Worker, on their way to Claude. Who holds what, and what a leaked token can do, 
 the connector's
 [threat model](https://github.com/piekstra/cli-common/blob/main/connector/README.md#threat-model).
 
-`tojfl auth logout --forget` removes the password and does not touch `mcp-http-token` or
-stop `tojfl mcp --http`. To revoke the connector's access, run `tojfl mcp --new-token
+`tojfl auth logout` clears the session and does not touch `mcp-http-token` or stop
+`tojfl mcp --http`. `tojfl auth logout --forget` removes the password and the token from
+the keychain, and says so, but a running server keeps the token it started with. To
+revoke the connector's access, run `tojfl mcp --new-token
 --overwrite` and restart the server (`launchctl kickstart -k gui/$(id -u)/com.piekstra.tojfl-mcp-http`);
 the old token works until the restart. To stop serving, run `launchctl bootout
 gui/$(id -u)/com.piekstra.tojfl-mcp-http` and stop the tunnel.

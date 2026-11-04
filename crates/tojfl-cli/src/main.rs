@@ -30,21 +30,28 @@ fn main() -> ExitCode {
     }
 }
 
+/// The same family error, owned. Only its exit code and message are read from here on.
+fn rekey(e: &pk_cli_core::CliError) -> pk_cli_core::CliError {
+    use pk_cli_core::CliError;
+    match e {
+        CliError::Usage(m) => CliError::Usage(m.clone()),
+        CliError::Auth(m) => CliError::Auth(m.clone()),
+        CliError::NotFound(m) => CliError::NotFound(m.clone()),
+        CliError::Upstream(m) => CliError::Upstream(m.clone()),
+        CliError::ConfirmationRequired(m) => CliError::ConfirmationRequired(m.clone()),
+        CliError::Keychain(m) => CliError::Keychain(m.clone()),
+        CliError::Other(m) => CliError::Other(m.clone()),
+        CliError::Detailed(_) => rekey(e.base()),
+    }
+}
+
 /// Map SDK/anyhow errors onto the family exit-code contract (SPEC v1 §1.5).
 fn to_cli_error(err: &anyhow::Error) -> pk_cli_core::CliError {
     use pk_cli_core::CliError;
     use tojfl_sdk::Error as E;
     if let Some(e) = err.downcast_ref::<CliError>() {
         // Re-key a family error (e.g. from the shared self-updater).
-        return match e {
-            CliError::Usage(m) => CliError::Usage(m.clone()),
-            CliError::Auth(m) => CliError::Auth(m.clone()),
-            CliError::NotFound(m) => CliError::NotFound(m.clone()),
-            CliError::Upstream(m) => CliError::Upstream(m.clone()),
-            CliError::ConfirmationRequired(m) => CliError::ConfirmationRequired(m.clone()),
-            CliError::Keychain(m) => CliError::Keychain(m.clone()),
-            CliError::Other(m) => CliError::Other(m.clone()),
-        };
+        return rekey(e);
     }
     match err.downcast_ref::<E>() {
         Some(E::Auth(m)) => CliError::Auth(m.clone()),

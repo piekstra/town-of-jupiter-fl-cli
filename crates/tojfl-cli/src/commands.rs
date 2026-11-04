@@ -140,13 +140,24 @@ fn auth_login(ctx: &Ctx, args: &LoginArgs) -> Result<()> {
 fn auth_logout(ctx: &Ctx, forget: bool) -> Result<()> {
     let portal = ctx.portal()?;
     portal.logout().context("clearing session")?;
+    let token = forget.then(|| {
+        pk_cli_secrets::CredentialStore::for_binary("tojfl")
+            .delete(pk_cli_mcp::HTTP_TOKEN_ACCOUNT)
+            .map_err(|e| anyhow!("{}", e.message()))
+    });
     if forget {
         config::keychain_clear().context("clearing keychain password")?;
     }
+    // Before anything is printed, so a failure is the one JSON document of this call.
+    let token_removed = match token {
+        Some(token) => finish_forget(token)?,
+        None => false,
+    };
     if ctx.fmt.json {
         ctx.fmt.print_json(&serde_json::json!({
             "status": "ok",
             "forgot_password": forget,
+            "connector_token_removed": token_removed,
         }))?;
     } else {
         println!(
@@ -158,7 +169,20 @@ fn auth_logout(ctx: &Ctx, forget: bool) -> Result<()> {
             }
         );
     }
+    if token_removed {
+        eprintln!("{}", pk_cli_mcp::stop_note("tojfl"));
+    }
     Ok(())
+}
+
+/// Whether `auth logout --forget` removed a connector token. Nothing records whether `mcp
+/// --new-token` ran, so the delete is ungated, and one that could not be removed is an error,
+/// since it still opens the connector.
+fn finish_forget(token: Result<bool>) -> Result<bool> {
+    token.context(
+        "the connector token of `tojfl mcp --http` could not be removed, if there is one, and \
+         would still open the connector. Run `tojfl auth logout --forget` again",
+    )
 }
 
 fn auth_status(ctx: &Ctx) -> Result<()> {
@@ -1731,5 +1755,16 @@ mod tests {
         // Unknown key is a usage error.
         assert!(apply_config_key(&mut cfg, "password", Some("x")).is_err());
         assert!(apply_config_key(&mut cfg, "nope", Some("x")).is_err());
+    }
+
+    #[test]
+    fn a_forget_that_could_not_remove_the_connector_token_says_so() {
+        let says = format!(
+            "{:#}",
+            super::finish_forget(Err(anyhow::anyhow!("denied"))).unwrap_err()
+        );
+        assert!(says.contains("connector token"), "{says}");
+        assert!(says.contains("`tojfl auth logout --forget`"), "{says}");
+        assert!(says.contains("denied"), "{says}");
     }
 }
