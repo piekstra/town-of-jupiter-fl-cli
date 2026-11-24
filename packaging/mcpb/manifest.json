@@ -16,7 +16,7 @@
   "homepage": "https://github.com/piekstra/town-of-jupiter-fl-cli",
   "documentation": "https://github.com/piekstra/town-of-jupiter-fl-cli#use-with-claude",
   "support": "https://github.com/piekstra/town-of-jupiter-fl-cli/issues",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "keywords": [
     "jupiter",
     "water",
