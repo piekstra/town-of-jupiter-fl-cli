@@ -511,7 +511,13 @@ impl<R: Reads> UtilitySource for JupiterSource<R> {
             .iter()
             .enumerate()
             .filter(|(_, b)| b.amount.is_some() && !b.date.trim().is_empty())
-            .map(|(i, b)| commands::statement_of(i + 1, b))
+            .map(|(i, b)| {
+                // `bills get <N>` counts from the newest bill, so every bill's N moves when one
+                // arrives. A position holds this id, so here it is the bill's date.
+                let mut statement = commands::statement_of(i + 1, b);
+                statement.id = commands::iso_date(&b.date);
+                statement
+            })
             .collect();
         if statements.is_empty() {
             return Err(shape_error("billing history"));

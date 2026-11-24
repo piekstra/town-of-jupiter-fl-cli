@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.3 — 2026-11-04
+
+- `jupiter_bills`: a bill's id is its date. It was the bill's count from the newest, which moved every bill when one arrived, so a bill arriving between pages could repeat a row. `bills get <N>` keeps its count.
+- `auth logout --forget` speaks to a server on `$TOJFL_MCP_TOKEN` too, which never had a keychain item to remove.
+- cli-common v0.29.0, up from v0.27.0.
+
 ## v0.5.2 — 2026-11-03
 
 - `auth logout --forget` also removes the connector token `mcp-http-token`, and says what that
